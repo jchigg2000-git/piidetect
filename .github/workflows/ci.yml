@@ -1,0 +1,22 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Verify no external dependencies
+        run: |
+          deps=$(go list -m all | grep -v '^github.com/jchigg2000-git/piidetect$' || true)
+          if [ -n "$deps" ]; then echo "unexpected module requirements:"; echo "$deps"; exit 1; fi
+      - run: gofmt -l . | tee /dev/stderr | (! read)
+      - run: go vet ./...
+      - run: go test ./... -race -cover

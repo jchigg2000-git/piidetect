@@ -1,0 +1,122 @@
+package piidetect
+
+import (
+	"context"
+	"testing"
+)
+
+// The G2 acceptance floors: on regex-detectable corpus entries the built-in
+// recognizers hold recall ≥ 0.95 and precision ≥ 0.97, and no trap ever
+// fires. This test is also the CI half of the recall ratchet — a pattern
+// change that regresses a type fails here.
+func TestRegexCorpusFloors(t *testing.T) {
+	det := NewRegex()
+	var tp, fn, fp int
+	for _, e := range loadCorpus(t) {
+		if !hasEngine(e, "regex") {
+			continue
+		}
+		spans, err := det.Detect(context.Background(), e.Text)
+		if err != nil {
+			t.Fatalf("%s: %v", e.Name, err)
+		}
+		for _, sp := range spans {
+			for _, trap := range e.Traps {
+				if overlaps(sp, trap) {
+					t.Errorf("%s: trap fired — %s detected inside a %q trap span", e.Name, sp.Type, e.Text[trap.Start:trap.End])
+				}
+			}
+		}
+		// Presidio-only truths (names, addresses) are not regex's job.
+		for _, truth := range e.Truths {
+			if truth.Type == "PERSON_NAME" || truth.Type == "ADDRESS" {
+				continue
+			}
+			matched := false
+			for _, sp := range spans {
+				if overlaps(sp, truth) && sp.Type == truth.Type {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				tp++
+			} else {
+				fn++
+				t.Logf("%s: missed %s %q", e.Name, truth.Type, e.Text[truth.Start:truth.End])
+			}
+		}
+		for _, sp := range spans {
+			hit := false
+			for _, truth := range e.Truths {
+				if overlaps(sp, truth) {
+					hit = true
+					break
+				}
+			}
+			if !hit {
+				fp++
+				t.Logf("%s: false positive %s %q", e.Name, sp.Type, e.Text[sp.Start:sp.End])
+			}
+		}
+	}
+	recall := float64(tp) / float64(tp+fn)
+	precision := float64(tp) / float64(tp+fp)
+	if recall < 0.95 {
+		t.Errorf("regex recall = %.3f (tp=%d fn=%d), floor 0.95", recall, tp, fn)
+	}
+	if precision < 0.97 {
+		t.Errorf("regex precision = %.3f (tp=%d fp=%d), floor 0.97", precision, tp, fp)
+	}
+}
+
+// Bare 9-digit SSNs are a deliberate v0 miss; a pattern-pack rule closes the
+// gap without a restart, and clearing the pack reopens it (the flywheel
+// hot-reload contract).
+func TestPatternPackHotSwap(t *testing.T) {
+	det := NewRegex()
+	text := "For verification the SSN on record is 123456789, per the intake call."
+
+	spans, _ := det.Detect(context.Background(), text)
+	for _, sp := range spans {
+		if sp.Type == "SSN" {
+			t.Fatalf("bare SSN unexpectedly caught by builtin: %+v (update this test's premise)", sp)
+		}
+	}
+
+	err := det.SetPatternPack([]PatternRule{{
+		ID: "ssn-bare-context", Type: "SSN",
+		Regex:      `(?i)\bSSN(?: on record)?(?: is|:)? ?(\d{9})\b`,
+		Confidence: 0.7,
+	}})
+	if err != nil {
+		t.Fatalf("SetPatternPack: %v", err)
+	}
+	spans, _ = det.Detect(context.Background(), text)
+	found := false
+	for _, sp := range spans {
+		if sp.Type == "SSN" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("pattern pack rule did not catch the bare SSN")
+	}
+
+	if err := det.SetPatternPack(nil); err != nil {
+		t.Fatalf("clear pack: %v", err)
+	}
+	spans, _ = det.Detect(context.Background(), text)
+	for _, sp := range spans {
+		if sp.Type == "SSN" {
+			t.Error("cleared pack still detecting")
+		}
+	}
+}
+
+func TestPatternPackRejectsBadRegex(t *testing.T) {
+	det := NewRegex()
+	if err := det.SetPatternPack([]PatternRule{{ID: "bad", Type: "X", Regex: "("}}); err == nil {
+		t.Error("want compile error for invalid pattern")
+	}
+}
