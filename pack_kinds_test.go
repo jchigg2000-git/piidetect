@@ -119,3 +119,32 @@ func TestRegexIgnoresPresidioConfigKinds(t *testing.T) {
 		t.Error("regex-kind pack rule should still compile and match")
 	}
 }
+
+// A regex rule with no Confidence scores 0.75 in the regex engine; it used to
+// reach Presidio as score 0, under every gate, so it could never fire there.
+func TestPresidioUnscoredRuleGetsDefaultConfidence(t *testing.T) {
+	var gotPayload struct {
+		AdHoc []struct {
+			Patterns []struct {
+				Score float64 `json:"score"`
+			} `json:"patterns"`
+		} `json:"ad_hoc_recognizers"`
+	}
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotPayload)
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	defer stub.Close()
+
+	p := NewPresidio(stub.URL)
+	p.SetPatternPack([]PatternRule{{ID: "r1", Type: "EMPLOYEE_ID", Regex: `\bEMP\d{6}\b`}})
+	if _, err := p.Detect(context.Background(), "EMP123456"); err != nil {
+		t.Fatal(err)
+	}
+	if len(gotPayload.AdHoc) != 1 || len(gotPayload.AdHoc[0].Patterns) != 1 {
+		t.Fatalf("payload = %+v", gotPayload)
+	}
+	if got := gotPayload.AdHoc[0].Patterns[0].Score; got != 0.75 {
+		t.Errorf("score = %v, want the 0.75 default", got)
+	}
+}

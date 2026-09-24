@@ -41,7 +41,8 @@ type Detector interface {
 // from the returned errors.
 type Chain struct {
 	Detectors []Detector
-	Timeout   time.Duration
+	// Timeout bounds each detector on a Run; zero means DefaultTimeout.
+	Timeout time.Duration
 	// allow holds map[type]set(lowercased term) from the pattern pack's
 	// allow_list rules. Swapped atomically so a hot-reload never tears.
 	allow atomic.Value
@@ -110,11 +111,19 @@ func (c *Chain) allowed(typ, span string) bool {
 }
 
 // Run returns merged, guard-validated spans plus one error per failed engine.
+//
+// A span with offsets outside text is dropped and reported as its engine's
+// error. Kept, it would panic in a type guard, or merge with valid neighbours
+// into a union Mask cannot apply — leaving all of them in the clear.
 func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
+	timeout := c.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
 	var all []Span
 	var errs []error
 	for _, d := range c.Detectors {
-		dctx, cancel := context.WithTimeout(ctx, c.Timeout)
+		dctx, cancel := context.WithTimeout(ctx, timeout)
 		var spans []Span
 		var err error
 		if rd, ok := d.(rawDetector); ok {
@@ -127,21 +136,38 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 			errs = append(errs, fmt.Errorf("%s: %w", d.Name(), err))
 			continue
 		}
+		bad := 0
 		for _, sp := range spans {
+			if sp.Start == sp.End {
+				continue // claims nothing
+			}
+			if !sp.within(text) {
+				bad++
+				continue
+			}
 			if guard, ok := typeGuards[sp.Type]; ok && !guard(text, sp.Start, sp.End) {
 				continue
 			}
-			if sp.Start >= 0 && sp.End <= len(text) && c.allowed(sp.Type, text[sp.Start:sp.End]) {
+			if c.allowed(sp.Type, text[sp.Start:sp.End]) {
 				continue
 			}
 			all = append(all, sp)
+		}
+		if bad > 0 {
+			errs = append(errs, fmt.Errorf("%s: dropped %d span(s) with offsets outside the text", d.Name(), bad))
 		}
 	}
 	return Merge(all), errs
 }
 
+// within reports whether sp is a non-empty span inside text.
+func (sp Span) within(text string) bool {
+	return 0 <= sp.Start && sp.Start < sp.End && sp.End <= len(text)
+}
+
 // Merge sorts spans and collapses overlaps: the union wins the extent, the
-// higher confidence wins type and provenance.
+// higher confidence wins type and provenance. It sorts and overwrites spans in
+// place and returns a prefix of it.
 func Merge(spans []Span) []Span {
 	if len(spans) < 2 {
 		return spans

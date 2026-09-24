@@ -3,6 +3,9 @@ package piidetect
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -23,7 +26,7 @@ func TestChainMergesOverlapsHigherConfidenceWins(t *testing.T) {
 		fakeDetector{name: "a", spans: []Span{{Start: 10, End: 21, Type: "SSN", Confidence: 0.9, Detector: "a"}}},
 		fakeDetector{name: "b", spans: []Span{{Start: 8, End: 21, Type: "US_SSN_CTX", Confidence: 0.95, Detector: "b"}}},
 	}}
-	spans, errs := c.Run(context.Background(), "irrelevant")
+	spans, errs := c.Run(context.Background(), "text long enough for both spans")
 	if len(errs) != 0 {
 		t.Fatalf("errs = %v", errs)
 	}
@@ -44,7 +47,7 @@ func TestChainCollectsErrorsAndKeepsGoodSpans(t *testing.T) {
 		fakeDetector{name: "regex", spans: []Span{{Start: 0, End: 5, Type: "EMAIL", Confidence: 0.9}}},
 		fakeDetector{name: "presidio", err: errors.New("connection refused")},
 	}}
-	spans, errs := c.Run(context.Background(), "x")
+	spans, errs := c.Run(context.Background(), "a@b.co")
 	if len(spans) != 1 {
 		t.Errorf("good detector's spans lost: %+v", spans)
 	}
@@ -101,5 +104,39 @@ func TestMergeKeepsDisjointSpans(t *testing.T) {
 	})
 	if len(spans) != 2 || spans[0].Start != 0 || spans[1].Start != 20 {
 		t.Errorf("merge broke disjoint spans: %+v", spans)
+	}
+}
+
+// A span outside the text must not panic a type guard, and must not merge
+// with the floor's valid spans into a union Mask skips — which left the SSN
+// below in the clear with no error at all.
+func TestChainDropsOutOfRangeSpansAndReportsThem(t *testing.T) {
+	text := "SSN 078-05-1120 here"
+	c := &Chain{Timeout: time.Second, Detectors: []Detector{
+		NewRegex(),
+		fakeDetector{name: "buggy", spans: []Span{
+			{Start: 2, End: 99, Type: "PERSON_NAME", Confidence: 0.5},
+			{Start: 0, End: 99, Type: "CREDIT_CARD", Confidence: 0.5},
+		}},
+	}}
+	clean, errs := c.Redact(context.Background(), text)
+	if want := "SSN [SSN] here"; clean != want {
+		t.Errorf("got %q, want %q", clean, want)
+	}
+	if len(errs) != 1 {
+		t.Errorf("errs = %v, want the buggy engine's bad spans reported", errs)
+	}
+}
+
+// The zero Timeout used to hand every engine an already-expired context, so a
+// Chain literal without one could never reach its sidecar.
+func TestChainZeroTimeoutUsesDefault(t *testing.T) {
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	defer stub.Close()
+	c := &Chain{Detectors: []Detector{NewPresidio(stub.URL)}}
+	if _, errs := c.Run(context.Background(), "hi"); len(errs) != 0 {
+		t.Errorf("errs = %v", errs)
 	}
 }

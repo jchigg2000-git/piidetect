@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Chain:** a span with offsets outside the text — from a custom detector — panicked a type guard,
+  or merged with the floor's valid spans into a union `Mask` skipped, leaving all of them in the
+  clear with no error. Such spans are now dropped and reported as that detector's error.
+- **Chain:** a zero `Timeout` gave every detector an already-expired context, so a `Chain` literal
+  without one could never reach a Presidio sidecar. Zero now means `DefaultTimeout`.
+- **Mask:** overlapping spans left fragments of the earlier one unredacted. They are now merged
+  first, as `Chain.Run` does. `Mask` is also a single pass: 20k spans in 380 KB went from 0.8 s
+  and 7.9 GB allocated to 0.6 ms.
+- **Presidio:** a regex rule with no `Confidence` scored 0.75 in the regex engine but reached
+  Presidio as score 0, under every gate, so it never fired there.
+- **New / NewRegex:** the built-in regexes are compiled once, not on every call; the quickstart's
+  `piidetect.New().Redact(…)` is 3.6× faster and allocates 49× less.
+
 ## v0.1.1 — 2026-09-23
 
 Values written the way people actually type or print them were silently left unredacted. This

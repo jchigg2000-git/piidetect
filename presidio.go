@@ -53,7 +53,7 @@ func (p *Presidio) SetPatternPack(rules []PatternRule) {
 				"supported_language": "en",
 				"supported_entity":   r.Type,
 				"patterns": []map[string]any{
-					{"name": r.ID, "regex": r.Regex, "score": r.Confidence},
+					{"name": r.ID, "regex": r.Regex, "score": r.confidence()},
 				},
 			}
 			if len(r.Context) > 0 {

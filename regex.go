@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strings"
 	"sync/atomic"
 )
@@ -37,6 +38,15 @@ type PatternRule struct {
 }
 
 func (r PatternRule) isRegex() bool { return r.Kind == "" || r.Kind == "regex" }
+
+// confidence is the rule's score, 0.75 when unset. Both engines use it: sent to
+// Presidio as 0, an unscored rule's hits would all fall under the score gate.
+func (r PatternRule) confidence() float64 {
+	if r.Confidence == 0 {
+		return 0.75
+	}
+	return r.Confidence
+}
 
 type recognizer struct {
 	typ        string
@@ -124,9 +134,13 @@ func builtinRecognizers() []recognizer {
 	}
 }
 
+// builtins is compiled once and shared by every Regex (a *regexp.Regexp is
+// safe for concurrent use), so New() per call does not recompile them.
+var builtins = builtinRecognizers()
+
 func NewRegex() *Regex {
 	r := &Regex{}
-	base := builtinRecognizers()
+	base := builtins
 	r.compiled.Store(&base)
 	return r
 }
@@ -137,7 +151,7 @@ func (r *Regex) Name() string { return "regex" }
 // recognizer set — the flywheel hot-reload path, no restart. Non-regex kinds
 // (deny lists, thresholds) are Presidio configuration and are skipped here.
 func (r *Regex) SetPatternPack(rules []PatternRule) error {
-	next := builtinRecognizers()
+	next := slices.Clone(builtins)
 	for _, rule := range rules {
 		if !rule.isRegex() {
 			continue
@@ -146,11 +160,7 @@ func (r *Regex) SetPatternPack(rules []PatternRule) error {
 		if err != nil {
 			return fmt.Errorf("pattern %s (%s): %w", rule.ID, rule.Type, err)
 		}
-		conf := rule.Confidence
-		if conf == 0 {
-			conf = 0.75
-		}
-		next = append(next, recognizer{typ: rule.Type, re: re, confidence: conf})
+		next = append(next, recognizer{typ: rule.Type, re: re, confidence: rule.confidence()})
 	}
 	r.compiled.Store(&next)
 	return nil

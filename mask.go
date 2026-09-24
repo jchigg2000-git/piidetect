@@ -1,24 +1,32 @@
 package piidetect
 
 import (
-	"sort"
+	"strings"
 )
 
-// Mask replaces each span with its typed placeholder ([SSN], [EMAIL], …),
-// rewriting right-to-left so earlier offsets stay valid. Spans must be
-// non-overlapping (detect.Merge guarantees it).
+// Mask replaces each span with its typed placeholder ([SSN], [EMAIL], …).
+// Overlapping spans are merged first, as a Chain does, so no fragment of any
+// claim survives; spans outside text are skipped. spans is not modified.
 func Mask(text string, spans []Span) string {
-	if len(spans) == 0 {
+	valid := make([]Span, 0, len(spans))
+	for _, sp := range spans {
+		if sp.within(text) {
+			valid = append(valid, sp)
+		}
+	}
+	if len(valid) == 0 {
 		return text
 	}
-	sorted := make([]Span, len(spans))
-	copy(sorted, spans)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Start > sorted[j].Start })
-	for _, sp := range sorted {
-		if sp.Start < 0 || sp.End > len(text) || sp.Start >= sp.End {
-			continue
-		}
-		text = text[:sp.Start] + "[" + sp.Type + "]" + text[sp.End:]
+	var b strings.Builder
+	b.Grow(len(text))
+	last := 0
+	for _, sp := range Merge(valid) {
+		b.WriteString(text[last:sp.Start])
+		b.WriteByte('[')
+		b.WriteString(sp.Type)
+		b.WriteByte(']')
+		last = sp.End
 	}
-	return text
+	b.WriteString(text[last:])
+	return b.String()
 }

@@ -72,7 +72,7 @@ func TestPresidioErrorSurfaces(t *testing.T) {
 }
 
 // Live integration against the real sidecar; skips unless it's up.
-// Run: docker compose -f deploy/presidio/docker-compose.yml up -d
+// Run: docker run -d -p 8126:3000 mcr.microsoft.com/presidio-analyzer
 func TestPresidioLiveNamesAndAddresses(t *testing.T) {
 	url := "http://127.0.0.1:8126"
 	probe, err := http.Get(url + "/health")

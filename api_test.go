@@ -53,3 +53,11 @@ func TestWithPresidioKeepsRegexFloorFirst(t *testing.T) {
 		t.Errorf("floor should still redact when the sidecar is down: %q", clean)
 	}
 }
+
+// The quickstart builds a chain per call. That used to recompile every
+// built-in regex each time: 3x the latency and 50x the memory of reuse.
+func TestNewDoesNotRecompileBuiltins(t *testing.T) {
+	if n := testing.AllocsPerRun(10, func() { New() }); n > 10 {
+		t.Errorf("New made %.0f allocations, want the compiled builtins shared", n)
+	}
+}
