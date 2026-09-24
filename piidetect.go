@@ -53,7 +53,7 @@ type Chain struct {
 // the same way whichever engine claimed it (Presidio's context boosting has
 // no hyphen-adjacency notion; ours does).
 var typeGuards = map[string]func(text string, start, end int) bool{
-	"SSN":         notHyphenAdjacent,
+	"SSN":         ssnValid,
 	"CREDIT_CARD": luhnValid,
 	"IP":          validIP,
 	"IBAN":        ibanValid,

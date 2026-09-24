@@ -16,6 +16,25 @@
   Presidio as score 0, under every gate, so it never fired there.
 - **New / NewRegex:** the built-in regexes are compiled once, not on every call; the quickstart's
   `piidetect.New().Redact(…)` is 3.6× faster and allocates 49× less.
+- **EMAIL:** an address with a non-ASCII letter was missed or partly masked (`müller@example.de`
+  became `mü[EMAIL]`), because RE2's `\b` and the character classes were ASCII-only. Latin, Greek
+  and Cyrillic letters now count; an address glued to CJK or Thai text does not absorb it.
+- **IBAN:** two printed IBANs in a row lost the second, because the search resumed after the first
+  one's untrimmed greedy match. The type guard also dropped a correct hyphen-grouped IBAN from the
+  Presidio tier.
+- **DOB:** a birth label followed by `>` or `|` (`<dob>3/14/1985</dob>`, `dob|14.03.1961`), a FHIR
+  XML `<birthDate value="…"/>`, or a line break after `Date of Birth:` voided the date. `14-Mar-1985`,
+  `02-JAN-55`, `14th March 1985` and `1985/03/14` were missed after a label.
+- **PHONE:** international numbers with a bracketed area code (`+55 (11) 91234-5678`) were missed.
+- **SSN, PHONE, CREDIT_CARD:** a label joined to its value by a hyphen (`SSN-219-09-9999`,
+  `Tel-415-555-0173`, `CC-4111-…`) was rejected as a hyphenated identifier.
+- **MRN:** camelCase keys (`patientMrn`, `<PatientMRN>`) were rejected as the tail of a longer word.
+
+### Fewer false positives
+
+- **CREDIT_CARD:** epoch-millisecond timestamps (`1727049600007`), one in ten of which passes Luhn.
+- **PHONE:** NANP numbers whose area code or exchange starts with 0 or 1 (`123-456-7890`).
+- **SSN:** numbers the SSA never issues (area `000` or `666`, group `00`, serial `0000`).
 
 ## v0.1.1 — 2026-09-23
 

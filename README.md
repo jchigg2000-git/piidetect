@@ -46,14 +46,14 @@ checks belong to the regex floor's own recognizers:
 
 | Type | Recognized | Confirmed by |
 |---|---|---|
-| `SSN` | `123-45-6789`, `123 45 6789` | not glued to a hyphenated identifier |
-| `CREDIT_CARD` | 13–19 digits, spaced or dashed; a following expiry or CVV does not hide it | Luhn checksum + hyphen adjacency |
-| `IBAN` | electronic (`DE89370400440532013000`, any case) and printed (`DE89 3704 0044 0532 0130 00`) | mod-97 check digits + the country's registered length |
+| `SSN` | `123-45-6789`, `123 45 6789`, `SSN-123-45-6789` | never-issued numbers (area `000`/`666`, group `00`, serial `0000`) rejected; not glued to a hyphenated identifier other than a label (`SSN-`, `Tel-`, `CC-`) |
+| `CREDIT_CARD` | 13–19 digits, spaced or dashed; a following expiry or CVV does not hide it | Luhn checksum + hyphen adjacency; a 13-digit run starting with `1` is an epoch-milliseconds timestamp, not a card |
+| `IBAN` | electronic (`DE89370400440532013000`, any case) and printed (`DE89 3704 0044 0532 0130 00`); hyphen-grouped when the Presidio tier claims it | mod-97 check digits + the country's registered length |
 | `IP` | dotted quad (IPv6 and CIDR when the Presidio tier claims them) | octet range, no leading zeros, not part of a longer dotted run such as an OID |
-| `EMAIL` | RFC-ish local@domain.tld | — |
-| `PHONE` | NANP (with or without `+1` / `1-`), E.164, and international numbers as printed (`+44 20 7946 0958`) | NANP: not part of a longer digit run, hyphen adjacency |
-| `MRN` | the `MRN` label then 6–10 digits: `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567` | the label must start a word; a line break is crossed only after a separator |
-| `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `date of birth`, `born`, `birthDate`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, and month names | month 01–12, day 01–31 (range only, not calendar-aware); the label for the other forms |
+| `EMAIL` | RFC-ish local@domain.tld, in Latin, Greek or Cyrillic letters (`müller@münchen.de`) | — |
+| `PHONE` | NANP (with or without `+1` / `1-`), E.164, and international numbers as printed (`+44 20 7946 0958`, `+55 (11) 91234-5678`) | NANP: area code and exchange start 2–9, not part of a longer digit run, hyphen adjacency |
+| `MRN` | the `MRN` label then 6–10 digits: `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567` | the label must start a word or a camelCase hump; a line break is crossed only after a separator |
+| `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `date of birth`, `born`, `birthDate`, `<dob>`, `<birthDate value="…">`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, and month names (`14-Mar-1985`, `14th March 1985`) | month 01–12, day 01–31 (range only, not calendar-aware); the label for the other forms |
 
 So these are left alone:
 
@@ -100,6 +100,10 @@ chain.SetPatternPack([]piidetect.PatternRule{
 })
 ```
 
+Presidio compiles a pack's regex rules with its own default flags, case-insensitive among them,
+so the same rule can match more there than in the regex engine (`\bEMP\d{6}\b` also matches
+`emp123456`). Write rules that mean the same thing under both.
+
 Allow-list entries suppress a specific term for a specific type, matched case-insensitively on the
 span's own text. They suppress the term, never a region of the document — so an allow-listed value
 cannot be used to smuggle real PII past the filter by sitting next to it.
@@ -116,10 +120,20 @@ Stated plainly, because the failure mode of a redaction library is silent under-
 - **Dates other than `MM/DD/YYYY`** (`3/14/1985`, `1985-03-14`, `14.03.1985`) are only claimed as
   `DOB` right after a birth label. Unlabeled, they are almost always appointment, invoice, or log
   dates.
+- **Bare 10-digit phone numbers** (`4155550173`) are not matched, for the same reason as bare
+  SSNs.
 - **Unicode dashes** (non-breaking hyphen, en dash) as SSN or phone separators are not matched;
   the separator classes are ASCII.
+- **URL- and form-encoded values** (`jane.doe%40example.org`, `4111+1111+1111+1111`) are not
+  matched. Decode request bodies and query strings before scanning them.
+- **Email addresses written in scripts without spaces** (Chinese, Japanese, Thai) are not matched
+  in those scripts: the address would absorb the words around it. ASCII addresses inside such
+  text are.
 - **Names, addresses, and free-text PHI** are not matched by the regex floor at all. That is what
   the Presidio tier is for.
+- **Presidio entity types not in `PresidioEntityMap` are dropped**, among them `US_PASSPORT`,
+  `US_BANK_NUMBER`, `US_DRIVER_LICENSE`, `UK_NHS` and `CRYPTO`, and so is `DATE_TIME`: an unmapped
+  type would bypass the type guards. Add a type to the map to accept it.
 - **Spans are byte offsets.** Presidio results are converted from codepoints on the way in.
 - **Masking is not reversible.** `Mask` replaces a span with `[TYPE]`; there is no detokenization.
 

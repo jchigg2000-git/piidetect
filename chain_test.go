@@ -76,6 +76,7 @@ func TestChainTypeGuardsKeepOtherEnginesForms(t *testing.T) {
 	keep := []struct{ typ, value string }{
 		{"IBAN", "DE89 3704 0044 0532 0130 00"},
 		{"IBAN", "gb82west12345698765432"},
+		{"IBAN", "DE89-3704-0044-0532-0130-00"},
 		{"IP", "2001:db8::1"},
 		{"IP", "192.168.1.0/24"},
 	}

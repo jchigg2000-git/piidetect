@@ -127,3 +127,22 @@ func TestPatternPackRejectsBadRegex(t *testing.T) {
 		t.Error("want compile error for invalid pattern")
 	}
 }
+
+// Extent matters as much as detection: the value must be masked whole, and
+// must not absorb the text around it. The corpus test checks coverage; this
+// checks the exact result.
+func TestRedactExactExtent(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		// RE2's \b is ASCII-only: "mü" used to survive in front of the mask.
+		{"Schreiben an müller@münchen.de bitte", "Schreiben an [EMAIL] bitte"},
+		// No spaces around the address in Japanese; it must not take the words.
+		{"連絡先はjane@example.comまで", "連絡先は[EMAIL]まで"},
+		{"'jane@example.com' <a@b.co>", "'[EMAIL]' <[EMAIL]>"},
+		// The first printed IBAN's greedy match used to swallow the second.
+		{"BE68 5390 0754 7034 NL91 ABNA 0417 1643 00", "[IBAN] [IBAN]"},
+	} {
+		if got, _ := New().Redact(context.Background(), c.in); got != c.want {
+			t.Errorf("Redact(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

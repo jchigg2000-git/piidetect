@@ -42,5 +42,17 @@
   {"name": "trap_oid", "engines": ["regex"], "marked": "Vendor OID «TRAP|1.3.6.1.4.1.311» is registered."},
   {"name": "name_free_text", "engines": ["presidio"], "marked": "Please summarize the visit for «PERSON_NAME|John Smith» and his cardiologist."},
   {"name": "address_free_text", "engines": ["presidio"], "marked": "Mail the kit to «ADDRESS|742 Evergreen Terrace, Springfield» by Tuesday."},
-  {"name": "name_and_ssn", "engines": ["regex", "presidio"], "marked": "«PERSON_NAME|Maria Alvarez» (SSN «SSN|219-09-1234») requested her records."}
+  {"name": "name_and_ssn", "engines": ["regex", "presidio"], "marked": "«PERSON_NAME|Maria Alvarez» (SSN «SSN|219-09-1234») requested her records."},
+  {"name": "email_non_ascii", "engines": ["regex"], "marked": "Schreiben Sie an «EMAIL|müller@münchen.de» oder «EMAIL|éric@exemple.fr»."},
+  {"name": "iban_grouped_pair", "engines": ["regex"], "marked": "Accounts «IBAN|BE68 5390 0754 7034» «IBAN|NL91 ABNA 0417 1643 00» on file."},
+  {"name": "dob_markup", "engines": ["regex"], "marked": "<dob>«DOB|3/14/1985»</dob> <birthDate value=\"«DOB|1985-03-14»\"/> dob|«DOB|14.03.1961»"},
+  {"name": "dob_after_line_break", "engines": ["regex"], "marked": "Date of Birth:\n«DOB|1985/03/14»"},
+  {"name": "dob_month_names", "engines": ["regex"], "marked": "DOB: «DOB|14-Mar-1985»; mother born «DOB|14th March 1961»; father DOB «DOB|02-JAN-55»."},
+  {"name": "trap_dob_header_row", "engines": ["regex"], "marked": "Name   DOB\n«TRAP|3/14/2024» rows exported overnight."},
+  {"name": "phone_intl_area_parens", "engines": ["regex"], "marked": "São Paulo «PHONE|+55 (11) 91234-5678», Berlin «PHONE|+49 (30) 1234567»."},
+  {"name": "labels_hyphen_joined", "engines": ["regex"], "marked": "Intake form: SSN-«SSN|219-09-9999» Tel-«PHONE|415-555-0173» CC-«CREDIT_CARD|4111-1111-1111-1111» signed."},
+  {"name": "mrn_camel_case_keys", "engines": ["regex"], "marked": "{\"patient«MRN|Mrn\": \"4481920»\"} <Patient«MRN|MRN>5512093»</PatientMRN>"},
+  {"name": "trap_epoch_millis", "engines": ["regex"], "marked": "Event {\"ts\":«TRAP|1727049600007»} logged."},
+  {"name": "trap_nanp_placeholder", "engines": ["regex"], "marked": "Order «TRAP|123-456-7890» is on hold."},
+  {"name": "trap_ssn_never_issued", "engines": ["regex"], "marked": "Template SSN «TRAP|000-00-0000», test value «TRAP|666-12-3456»."}
 ]

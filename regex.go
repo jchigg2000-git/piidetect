@@ -63,11 +63,17 @@ type recognizer struct {
 
 func builtinRecognizers() []recognizer {
 	return []recognizer{
+		// Letters are Latin, Greek or Cyrillic with their combining marks, so
+		// müller@münchen.de is covered whole: RE2's \b is ASCII-only, and an
+		// ASCII class left "mü" in front of the placeholder. Scripts written
+		// without spaces (CJK, Thai) are left out, or the address would absorb
+		// the words around it. The first character must be a letter, digit or
+		// underscore, which a leading \b used to enforce.
 		{typ: "EMAIL", confidence: 0.95,
-			re: regexp.MustCompile(`\b[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`)},
+			re: regexp.MustCompile(`[` + emailLetters + `0-9_][` + emailLetters + `\p{M}0-9._%+'-]*@[` + emailLetters + `\p{M}0-9.-]+\.[` + emailLetters + `\p{M}]{2,}`)},
 		{typ: "SSN", confidence: 0.9,
 			re:       regexp.MustCompile(`\b\d{3}[- ]\d{2}[- ]\d{4}\b`),
-			validate: notHyphenAdjacent},
+			validate: ssnValid},
 		// NANP. No \b on either side: nanpValid bounds the hit by non-digits
 		// instead, so "Tel415-555-0173" and "…0173x204" still count.
 		{typ: "PHONE", confidence: 0.85,
@@ -82,11 +88,12 @@ func builtinRecognizers() []recognizer {
 		{typ: "PHONE", confidence: 0.85,
 			re: regexp.MustCompile(`\+[1-9]\d{9,14}\b`)},
 		// International numbers as printed: country code, a separator, then
-		// 8–12 national digits in any grouping. +1 belongs to NANP above, and
-		// single-digit codes other than 7 are excluded so "zip+4 94110-1234"
-		// is not a phone.
+		// 8–12 national digits in any grouping, or a bracketed area code or
+		// trunk 0 and at least 6 more ("+55 (11) 91234-5678", "+44 (0)20 …").
+		// +1 belongs to NANP above, and single-digit codes other than 7 are
+		// excluded so "zip+4 94110-1234" is not a phone.
 		{typ: "PHONE", confidence: 0.85,
-			re: regexp.MustCompile(`\+(?:7|[2-9]\d{1,2})[- ](?:\(0\)[- ]?)?\d(?:[- ]?\d){7,11}\b`)},
+			re: regexp.MustCompile(`\+(?:7|[2-9]\d{1,2})(?:[- ]?\(\d{1,4}\)[- ]?\d(?:[- ]?\d){5,10}|[- ]\d(?:[- ]?\d){7,11})\b`)},
 		{typ: "CREDIT_CARD", confidence: 0.9,
 			re:       regexp.MustCompile(`\b\d(?:[- ]?\d){12,18}\b`),
 			validate: luhnValid},
@@ -120,19 +127,23 @@ func builtinRecognizers() []recognizer {
 		{typ: "DOB", confidence: 0.7,
 			re: regexp.MustCompile(`\b(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/(19|20)\d{2}\b`)},
 		// Dates of birth as people actually write them: unpadded, "-" or "."
-		// separators, day or month first, two-digit years, ISO, month names.
+		// separators, day or month first, two-digit years, ISO, month names
+		// (14-Mar-1985, 14th March 1985).
 		// Unlabeled, these shapes are overwhelmingly appointment, invoice and
 		// log dates, so dobCue requires a birth label right before the value.
 		{typ: "DOB", confidence: 0.7,
 			re: regexp.MustCompile(`(?i)\b(?:` +
 				`(?:0?[1-9]|[12]\d|3[01])[-/.](?:0?[1-9]|[12]\d|3[01])[-/.](?:19|20)?\d{2}` +
-				`|(?:19|20)\d{2}-(?:0?[1-9]|1[0-2])-(?:0?[1-9]|[12]\d|3[01])` +
-				`|(?:0?[1-9]|[12]\d|3[01])\.? (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,? (?:19|20)\d{2}` +
+				`|(?:19|20)\d{2}[-/.](?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01])` +
+				`|(?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?(?:\.? |-)(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*(?:\.?,? |-)(?:19|20)?\d{2}` +
 				`|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? (?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?,? (?:19|20)\d{2}` +
 				`)\b`),
 			validate: dobCue},
 	}
 }
+
+// emailLetters are the scripts an email address is matched in; see EMAIL.
+const emailLetters = `\p{Latin}\p{Greek}\p{Cyrillic}`
 
 // builtins is compiled once and shared by every Regex (a *regexp.Regexp is
 // safe for concurrent use), so New() per call does not recompile them.
@@ -176,14 +187,8 @@ func (r *Regex) Detect(ctx context.Context, text string) ([]Span, error) {
 func (r *Regex) detectRaw(_ context.Context, text string) ([]Span, error) {
 	var spans []Span
 	for _, rec := range *r.compiled.Load() {
-		for _, loc := range rec.re.FindAllStringIndex(text, -1) {
+		for _, loc := range rec.hits(text) {
 			start, end := loc[0], loc[1]
-			if rec.trim != nil {
-				var ok bool
-				if end, ok = rec.trim(text, start, end); !ok {
-					continue
-				}
-			}
 			if rec.validate != nil && !rec.validate(text, start, end) {
 				continue
 			}
@@ -196,12 +201,39 @@ func (r *Regex) detectRaw(_ context.Context, text string) ([]Span, error) {
 	return spans, nil
 }
 
+// hits returns rec's matches, each cut back by rec.trim when it has one. A
+// trimmed search resumes where the value ended, not where the greedy match
+// did, so the tail it cut off ("… 7034 NL91 ABNA …") can start the next value;
+// a rejected match resumes one byte in. Either way the search restarts at a
+// non-word byte or inside a letter pair, so \b still reads correctly there.
+func (rec recognizer) hits(text string) [][]int {
+	if rec.trim == nil {
+		return rec.re.FindAllStringIndex(text, -1)
+	}
+	var hits [][]int
+	for pos := 0; pos < len(text); {
+		loc := rec.re.FindStringIndex(text[pos:])
+		if loc == nil {
+			break
+		}
+		start, end := pos+loc[0], pos+loc[1]
+		if cut, ok := rec.trim(text, start, end); ok {
+			hits = append(hits, []int{start, cut})
+			pos = cut
+		} else {
+			pos = start + 1
+		}
+	}
+	return hits
+}
+
 // notHyphenAdjacent rejects hits glued to a hyphenated identifier on either
 // side — the ORD-123-45-6789 order-number trap. A hyphen that is not itself
 // glued to a letter or digit ("--" standing in for a dash, "- " before a
-// note) is punctuation, not part of an identifier, and does not count.
+// note) is punctuation, not part of an identifier, and does not count; nor
+// does one joining a label to its value ("SSN-219-09-9999").
 func notHyphenAdjacent(text string, start, end int) bool {
-	if start > 0 && text[start-1] == '-' && (start < 2 || isAlnum(text[start-2])) {
+	if start > 0 && text[start-1] == '-' && (start < 2 || isAlnum(text[start-2])) && !hyphenLabel(text, start-1) {
 		return false
 	}
 	if end < len(text) && text[end] == '-' && (end+1 >= len(text) || isAlnum(text[end+1])) {
@@ -210,9 +242,61 @@ func notHyphenAdjacent(text string, start, end int) bool {
 	return true
 }
 
+// hyphenLabels may be joined to their value by a hyphen without making it an
+// identifier: SSN-219-09-9999 and Tel-415-555-0173 are labelled values,
+// ORD-123-45-6789 is an order number.
+var hyphenLabels = map[string]bool{
+	"ssn": true, "tel": true, "phone": true, "fax": true, "cell": true,
+	"mobile": true, "cc": true, "card": true,
+}
+
+// hyphenLabel reports whether the hyphen at text[i] closes a whole word that
+// is one of hyphenLabels.
+func hyphenLabel(text string, i int) bool {
+	j := i
+	for j > 0 && i-j <= 6 && isAlpha(text[j-1]) {
+		j--
+	}
+	if j > 0 && isAlnum(text[j-1]) {
+		return false
+	}
+	return hyphenLabels[strings.ToLower(text[j:i])]
+}
+
+// ssnValid rejects numbers the SSA never issues (area 000 or 666, group 00,
+// serial 0000) and hits glued to a hyphenated identifier. Area 9xx stays: it
+// is the ITIN range, and Presidio's US_ITIN maps onto SSN.
+func ssnValid(text string, start, end int) bool {
+	d := digitsOf(text[start:end])
+	if len(d) == 9 && (d[:3] == "000" || d[:3] == "666" || d[3:5] == "00" || d[5:] == "0000") {
+		return false
+	}
+	return notHyphenAdjacent(text, start, end)
+}
+
+// digitsOf returns the ASCII digits of s, in order.
+func digitsOf(s string) string {
+	b := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		if isDigit(s[i]) {
+			b = append(b, s[i])
+		}
+	}
+	return string(b)
+}
+
 // nanpValid bounds a NANP hit by non-digits on both sides, so the tail of a
-// longer digit run ("Ref 98765-432-1098") is not a phone.
+// longer digit run ("Ref 98765-432-1098") is not a phone, and requires the
+// area code and exchange to start 2–9, as every assigned NANP number does
+// ("123-456-7890" is a placeholder or an order number).
 func nanpValid(text string, start, end int) bool {
+	d := digitsOf(text[start:end])
+	if len(d) == 11 {
+		d = d[1:] // trunk 1 or +1
+	}
+	if len(d) != 10 || d[0] < '2' || d[3] < '2' {
+		return false
+	}
 	if start > 0 && isDigit(text[start-1]) {
 		return false
 	}
@@ -223,9 +307,14 @@ func nanpValid(text string, start, end int) bool {
 }
 
 // mrnLabelStart rejects an MRN label that is the tail of a longer word or
-// number (EMRN, SMRN). Underscore and punctuation are fine: patient_mrn.
+// number (EMRN, SMRN). Underscore and punctuation are fine (patient_mrn), and
+// so is a camelCase hump (patientMrn, PatientMRN).
 func mrnLabelStart(text string, start, _ int) bool {
-	return start == 0 || !isAlnum(text[start-1])
+	if start == 0 || !isAlnum(text[start-1]) {
+		return true
+	}
+	prev := text[start-1]
+	return prev >= 'a' && prev <= 'z' && text[start] == 'M'
 }
 
 // dobCues are the labels that make a bare date a date of birth, matched
@@ -241,9 +330,25 @@ var dobCues = []struct {
 	{"dateofbirth", false}, {"birthday", false},
 }
 
+// dobPad is what may sit between a birth label and its value: spaces,
+// punctuation, the quotes and "=" of a key, and the ">" or "|" closing a tag
+// or table cell.
+const dobPad = " \t:#.=-\"'(>|\u00a0"
+
 func dobCue(text string, start, _ int) bool {
 	lo := max(start-40, 0)
-	before := strings.TrimRight(strings.ToLower(text[lo:start]), " \t:#.=-\"'(\u00a0")
+	before := strings.TrimRight(strings.ToLower(text[lo:start]), dobPad)
+	// A line break is crossed only after an explicit separator, as for MRN,
+	// so a table header ending in "DOB" never claims the next row's date.
+	if nl := strings.TrimRight(before, "\r\n"); len(nl) < len(before) {
+		nl = strings.TrimRight(nl, " \t\u00a0")
+		if nl == "" || !strings.ContainsRune("-:=#>", rune(nl[len(nl)-1])) {
+			return false
+		}
+		before = strings.TrimRight(nl, dobPad)
+	}
+	// FHIR XML carries the date in an attribute: <birthDate value="…"/>.
+	before = strings.TrimSuffix(before, " value")
 	for _, c := range dobCues {
 		if !strings.HasSuffix(before, c.cue) {
 			continue
@@ -267,6 +372,11 @@ func luhnValid(text string, start, end int) bool {
 		}
 	}
 	if len(digits) < 13 || len(digits) > 19 {
+		return false
+	}
+	// No 13-digit card number starts with 1, but every epoch-milliseconds
+	// timestamp does, and one in ten passes Luhn.
+	if len(digits) == 13 && digits[0] == 1 {
 		return false
 	}
 	sum, double := 0, false
@@ -309,13 +419,14 @@ func validIP(text string, start, end int) bool {
 	return true
 }
 
-// ibanValid checks the ISO 13616 mod-97 check digits on the electronic or the
-// paper (space-grouped) form, in any case. A registered country must also have
+// ibanValid checks the ISO 13616 mod-97 check digits on the electronic form or
+// one grouped by spaces (printed) or hyphens (as Presidio returns it), in any
+// case. A registered country must also have
 // its registered length. The spaced and lowercase forms are accepted only for
 // registered countries, which is what keeps lowercase hex digests out.
 func ibanValid(text string, start, end int) bool {
 	raw := text[start:end]
-	s := strings.ToUpper(strings.ReplaceAll(raw, " ", ""))
+	s := strings.ToUpper(ibanSeparators.Replace(raw))
 	if len(s) < 15 || len(s) > 34 {
 		return false
 	}
@@ -341,6 +452,8 @@ func ibanValid(text string, start, end int) bool {
 	}
 	return rem == 1
 }
+
+var ibanSeparators = strings.NewReplacer(" ", "", "-", "")
 
 // ibanGrouped cuts a paper-format hit back to its country's registered length,
 // which must fall on a group boundary, and validates what is left.
