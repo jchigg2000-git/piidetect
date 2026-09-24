@@ -78,3 +78,5 @@ func hasEngine(e corpusEntry, engine string) bool {
 }
 
 func overlaps(a, b Span) bool { return a.Start < b.End && b.Start < a.End }
+
+func covers(outer, inner Span) bool { return outer.Start <= inner.Start && outer.End >= inner.End }

@@ -39,20 +39,21 @@ ever stops producing that string, CI fails.
 
 ## What it detects, and what confirms it
 
-A regex that matches the *shape* of an SSN will happily claim an order number. Every built-in type
-whose validity is checkable gets a validator, applied to every span regardless of which detector
-claimed it:
+A regex that matches the *shape* of an SSN will happily claim an order number, so every built-in
+type whose validity is checkable gets a validator. The `SSN`, `CREDIT_CARD`, `IBAN` and `IP` checks
+are applied to every span regardless of which detector claimed it; the `PHONE`, `MRN` and `DOB`
+checks belong to the regex floor's own recognizers:
 
 | Type | Recognized | Confirmed by |
 |---|---|---|
 | `SSN` | `123-45-6789`, `123 45 6789` | not glued to a hyphenated identifier |
-| `CREDIT_CARD` | 13–19 digits, spaced or dashed | Luhn checksum + hyphen adjacency |
-| `IBAN` | ISO 13616 shape | mod-97 check digits |
-| `IP` | dotted quad | octet range, no leading zeros |
+| `CREDIT_CARD` | 13–19 digits, spaced or dashed; a following expiry or CVV does not hide it | Luhn checksum + hyphen adjacency |
+| `IBAN` | electronic (`DE89370400440532013000`, any case) and printed (`DE89 3704 0044 0532 0130 00`) | mod-97 check digits + the country's registered length |
+| `IP` | dotted quad (IPv6 and CIDR when the Presidio tier claims them) | octet range, no leading zeros, not part of a longer dotted run such as an OID |
 | `EMAIL` | RFC-ish local@domain.tld | — |
-| `PHONE` | NANP, E.164 | hyphen adjacency |
-| `MRN` | `MRN-1234567` and variants | — |
-| `DOB` | `MM/DD/YYYY` | month 01–12, day 01–31 (range only, not calendar-aware) |
+| `PHONE` | NANP (with or without `+1` / `1-`), E.164, and international numbers as printed (`+44 20 7946 0958`) | NANP: not part of a longer digit run, hyphen adjacency |
+| `MRN` | the `MRN` label then 6–10 digits: `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567` | the label must start a word; a line break is crossed only after a separator |
+| `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `date of birth`, `born`, `birthDate`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, and month names | month 01–12, day 01–31 (range only, not calendar-aware); the label for the other forms |
 
 So these are left alone:
 
@@ -109,7 +110,14 @@ Stated plainly, because the failure mode of a redaction library is silent under-
 
 - **Bare 9-digit SSNs** (`078051120`) are not matched. The false-positive rate against order
   numbers, account numbers, and zip+4 runs was not worth it.
-- **Bare MRNs** without an `MRN` prefix are not matched, for the same reason.
+- **Bare MRNs** without an `MRN` prefix are not matched, for the same reason. Neither is an `MRN`
+  label with its value on the next line and no separator between them: a table header ending in
+  `MRN` would otherwise claim the first number of the next row.
+- **Dates other than `MM/DD/YYYY`** (`3/14/1985`, `1985-03-14`, `14.03.1985`) are only claimed as
+  `DOB` right after a birth label. Unlabeled, they are almost always appointment, invoice, or log
+  dates.
+- **Unicode dashes** (non-breaking hyphen, en dash) as SSN or phone separators are not matched;
+  the separator classes are ASCII.
 - **Names, addresses, and free-text PHI** are not matched by the regex floor at all. That is what
   the Presidio tier is for.
 - **Spans are byte offsets.** Presidio results are converted from codepoints on the way in.
@@ -122,8 +130,9 @@ If you need a guarantee rather than a filter, do not use a filter.
 Extracted from the redaction gateway in
 [air-traffic](https://github.com/jchigg2000-git/air-traffic), where it runs inline on proxied
 requests. Zero external module requirements — `go list -m all` returns only this module, and CI
-enforces that. Test coverage is 92.6%, including a golden corpus of marked-up cases with explicit
-traps that must *not* be detected.
+enforces that. Test coverage is over 90%, including a golden corpus of marked-up cases with explicit
+traps that must *not* be detected. Every corpus value must be found and fully covered, and nothing
+unmarked may be claimed; one miss fails CI.
 
 ## License
 

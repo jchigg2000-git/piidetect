@@ -66,6 +66,34 @@ func TestChainTypeGuardsOverruleAnyEngine(t *testing.T) {
 	}
 }
 
+// The guards validate what another engine claimed, in the forms that engine
+// claims it: a printed (spaced) or lowercase IBAN, an IPv6 address or a CIDR
+// block. Guards written for the regex floor's own shapes used to drop these.
+func TestChainTypeGuardsKeepOtherEnginesForms(t *testing.T) {
+	keep := []struct{ typ, value string }{
+		{"IBAN", "DE89 3704 0044 0532 0130 00"},
+		{"IBAN", "gb82west12345698765432"},
+		{"IP", "2001:db8::1"},
+		{"IP", "192.168.1.0/24"},
+	}
+	for _, k := range keep {
+		text := "value: " + k.value + " end"
+		c := &Chain{Timeout: time.Second, Detectors: []Detector{
+			fakeDetector{name: "presidio", spans: []Span{{Start: 7, End: 7 + len(k.value), Type: k.typ, Confidence: 0.6, Detector: "presidio"}}},
+		}}
+		if spans, _ := c.Run(context.Background(), text); len(spans) != 1 {
+			t.Errorf("%s %q dropped by its type guard", k.typ, k.value)
+		}
+	}
+	text := "at 10:30:00 sharp"
+	c := &Chain{Timeout: time.Second, Detectors: []Detector{
+		fakeDetector{name: "presidio", spans: []Span{{Start: 3, End: 11, Type: "IP", Confidence: 0.6, Detector: "presidio"}}},
+	}}
+	if spans, _ := c.Run(context.Background(), text); len(spans) != 0 {
+		t.Errorf("a clock time passed the IP guard: %+v", spans)
+	}
+}
+
 func TestMergeKeepsDisjointSpans(t *testing.T) {
 	spans := Merge([]Span{
 		{Start: 20, End: 30, Type: "EMAIL"},

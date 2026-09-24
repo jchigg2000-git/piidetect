@@ -37,7 +37,8 @@ type Detector interface {
 
 // Chain runs engines in order (fast deterministic floor first), each under
 // its own timeout, and merges overlapping spans. Engine errors are collected,
-// not fatal — the caller decides what an error means via FAIL_MODE.
+// not fatal — the caller decides what an error means (fail open or closed)
+// from the returned errors.
 type Chain struct {
 	Detectors []Detector
 	Timeout   time.Duration
@@ -53,11 +54,19 @@ type Chain struct {
 var typeGuards = map[string]func(text string, start, end int) bool{
 	"SSN":         notHyphenAdjacent,
 	"CREDIT_CARD": luhnValid,
-	"IP":          validOctets,
-	"IBAN":        ibanMod97,
+	"IP":          validIP,
+	"IBAN":        ibanValid,
 	// spaCy reads "ORD-290" as the airport code → LOCATION → ADDRESS; a real
 	// address never sits glued to a hyphenated identifier.
 	"ADDRESS": notHyphenAdjacent,
+}
+
+// rawDetector is implemented by engines whose Detect merges their own hits.
+// The chain takes the unmerged hits instead, so each type guard judges one
+// claim on its own extent — never its union with a neighbouring claim of
+// another type, which no guard would accept — and merges once, after guarding.
+type rawDetector interface {
+	detectRaw(ctx context.Context, text string) ([]Span, error)
 }
 
 // SetPatternPack installs the chain-level half of a pattern pack: the
@@ -106,7 +115,13 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 	var errs []error
 	for _, d := range c.Detectors {
 		dctx, cancel := context.WithTimeout(ctx, c.Timeout)
-		spans, err := d.Detect(dctx, text)
+		var spans []Span
+		var err error
+		if rd, ok := d.(rawDetector); ok {
+			spans, err = rd.detectRaw(dctx, text)
+		} else {
+			spans, err = d.Detect(dctx, text)
+		}
 		cancel()
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", d.Name(), err))

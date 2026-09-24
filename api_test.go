@@ -33,6 +33,16 @@ func TestGuardsRejectLookalikes(t *testing.T) {
 	}
 }
 
+// A printed IBAN whose digit groups run on into a following number also
+// yields a Luhn-valid card claim. Guarding the merged union of the two would
+// reject both and leave the IBAN in the clear.
+func TestGuardsJudgeClaimsBeforeMerging(t *testing.T) {
+	clean, _ := New().Redact(context.Background(), "Wire GB82 WEST 1234 5698 7654 32 190 EUR")
+	if want := "Wire [IBAN] EUR"; clean != want {
+		t.Errorf("got  %q\nwant %q", clean, want)
+	}
+}
+
 func TestWithPresidioKeepsRegexFloorFirst(t *testing.T) {
 	c := WithPresidio("http://127.0.0.1:1") // deliberately dead
 	clean, errs := c.Redact(context.Background(), "SSN 078-05-1120 on file.")

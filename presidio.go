@@ -12,14 +12,14 @@ import (
 
 // Presidio calls a self-hosted presidio-analyzer sidecar over HTTP — the
 // heavy NER tier that catches what regex can't (names, addresses, free-text
-// PHI). Self-hosted deliberately: payloads never leave the local boundary
-// (design §6, §11). Approved pattern-pack rules ride along per call as
-// ad_hoc_recognizers — regex rules (with optional context words) and
-// deny-list rules — while threshold rules lower the per-type score gate; the
-// flywheel extends and retunes Presidio without a container restart.
+// PHI). Self-hosted deliberately: payloads never leave the local boundary.
+// Approved pattern-pack rules ride along per call as ad_hoc_recognizers —
+// regex rules (with optional context words) and deny-list rules — while
+// threshold rules lower the per-type score gate; the flywheel extends and
+// retunes Presidio without a container restart.
 //
-// The entity-type map and default score gate are shared vocabulary in
-// internal/model — the harness probe must speak the same dialect.
+// The entity-type map and default score gate live in vocabulary.go
+// (PresidioEntityMap, PresidioDefaultScoreGate).
 type Presidio struct {
 	url  string
 	http *http.Client
@@ -134,8 +134,8 @@ func (p *Presidio) Detect(ctx context.Context, text string) ([]Span, error) {
 		if !mapped {
 			// Only OUR pack's ad-hoc types come back verbatim. An unmapped
 			// Presidio built-in (US_ITIN fired first) would bypass the
-			// chain-level typeGuards — it must join the shared vocabulary
-			// (internal/model/presidio.go) before it can claim spans.
+			// chain-level typeGuards — it must join PresidioEntityMap
+			// (vocabulary.go) before it can claim spans.
 			if !pack.types[r.EntityType] {
 				continue
 			}

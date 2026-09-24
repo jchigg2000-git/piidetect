@@ -6,9 +6,10 @@ import (
 )
 
 // The G2 acceptance floors: on regex-detectable corpus entries the built-in
-// recognizers hold recall ≥ 0.95 and precision ≥ 0.97, and no trap ever
-// fires. This test is also the CI half of the recall ratchet — a pattern
-// change that regresses a type fails here.
+// recognizers hold recall ≥ 0.95 and precision ≥ 0.97, no trap ever fires,
+// and — stricter than the floors — no truth is missed or only partly covered
+// and nothing unmarked is claimed. This test is also the CI half of the recall
+// ratchet — a pattern change that regresses a type fails here.
 func TestRegexCorpusFloors(t *testing.T) {
 	det := NewRegex()
 	var tp, fn, fp int
@@ -32,9 +33,12 @@ func TestRegexCorpusFloors(t *testing.T) {
 			if truth.Type == "PERSON_NAME" || truth.Type == "ADDRESS" {
 				continue
 			}
+			// A truth counts only when one span of its type covers all of
+			// it: a partial hit leaves the rest of the value in the redacted
+			// text ("o'" of "o'brien@example.com").
 			matched := false
 			for _, sp := range spans {
-				if overlaps(sp, truth) && sp.Type == truth.Type {
+				if covers(sp, truth) && sp.Type == truth.Type {
 					matched = true
 					break
 				}
@@ -42,8 +46,11 @@ func TestRegexCorpusFloors(t *testing.T) {
 			if matched {
 				tp++
 			} else {
+				// A miss fails on its own: against a corpus this size the
+				// recall floor tolerates one silent miss, which is how
+				// "MRN: 86753090" went undetected while this test passed.
 				fn++
-				t.Logf("%s: missed %s %q", e.Name, truth.Type, e.Text[truth.Start:truth.End])
+				t.Errorf("%s: missed %s %q", e.Name, truth.Type, e.Text[truth.Start:truth.End])
 			}
 		}
 		for _, sp := range spans {
@@ -56,7 +63,7 @@ func TestRegexCorpusFloors(t *testing.T) {
 			}
 			if !hit {
 				fp++
-				t.Logf("%s: false positive %s %q", e.Name, sp.Type, e.Text[sp.Start:sp.End])
+				t.Errorf("%s: false positive %s %q", e.Name, sp.Type, e.Text[sp.Start:sp.End])
 			}
 		}
 	}

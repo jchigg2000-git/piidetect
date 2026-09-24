@@ -67,7 +67,7 @@ func TestPresidioErrorSurfaces(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	if _, err := p.Detect(ctx, "text"); err == nil {
-		t.Error("want connection error surfaced (FAIL_MODE decides what it means)")
+		t.Error("want connection error surfaced (the caller decides what it means)")
 	}
 }
 
