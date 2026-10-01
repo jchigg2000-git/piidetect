@@ -49,7 +49,7 @@ checks belong to the regex floor's own recognizers:
 | `SSN` | `123-45-6789`, `123 45 6789`, `SSN-123-45-6789`; unformatted (`078051120`) only after an SSN label (`SSN:`, `"ssn":`, `memberSsn=`, `Social Security Number`) | never-issued numbers (area `000`/`666`, group `00`, serial `0000`) rejected; not glued to a hyphenated identifier other than a label (`SSN-`, `Tel-`, `CC-`) |
 | `CREDIT_CARD` | 13–19 digits, spaced or dashed; a following expiry or CVV does not hide it | Luhn checksum + hyphen adjacency + a network that could have issued it: a leading `0`, a leading `1` (other than 15-digit UATP) or a leading `2` outside the Mir and Mastercard ranges is not a card, which keeps epoch timestamps, snowflake IDs, compact timestamps (`20260922143015`) and `0000 0000 0000 0000` out |
 | `IBAN` | electronic (`DE89370400440532013000`, any case) and printed (`DE89 3704 0044 0532 0130 00`); hyphen-grouped when the Presidio tier claims it | mod-97 check digits + the country's registered length |
-| `IP` | dotted quad (IPv6 and CIDR when the Presidio tier claims them) | octet range, no leading zeros, not part of a longer dotted run such as an OID |
+| `IP` | dotted quad; IPv6 of three or more groups, full or `::`-compressed (`2001:db8:85a3::8a2e:370:7334`, `[IPv6:2606:4700:4700::1111]`, `::ffff:192.0.2.1`), found by a linear scan; CIDR when the Presidio tier claims it | octet range, no leading zeros, not part of a longer dotted run such as an OID; IPv6 must parse, and a MAC or WWN, a C++ scope (`std::string`), a clock time or `::1` is not one |
 | `EMAIL` | RFC-ish local@domain.tld, in Latin, Greek or Cyrillic letters (`müller@münchen.de`) | an image asset name (`logo@2x.png`) is not an address |
 | `PHONE` | NANP (with or without `+1` / `1-`), E.164, and international numbers as printed (`+44 20 7946 0958`, `+55 (11) 91234-5678`); unformatted NANP (`4155550173`) only after a phone label (`Phone:`, `"mobile":`, `homePhone=`, `Fax`) | NANP: area code and exchange start 2–9, not part of a longer digit run, hyphen adjacency |
 | `MRN` | the `MRN`, `Medical Record` or `Med Rec` label then 6–10 digits: `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567`, `Medical Record Number: 1234567`, `"medicalRecordNumber": "1234567"` | the label must start a word or a camelCase hump; a line break is crossed only after a separator |
@@ -137,6 +137,9 @@ Stated plainly, because the failure mode of a redaction library is silent under-
 - **Email addresses written in scripts without spaces** (Chinese, Japanese, Thai) are not matched
   in those scripts: the address would absorb the words around it. ASCII addresses inside such
   text are.
+- **IPv6 of fewer than three groups** (`::1`, `fe80::1`, `2001:db8::/32`) is not matched: with
+  that few, `a::b` and `Bad::Dad` in code are indistinguishable from addresses. Loopback and
+  link-local are not people.
 - **Names, addresses, and free-text PHI** are not matched by the regex floor at all. That is what
   the Presidio tier is for.
 - **Presidio entity types not in `PresidioEntityMap` are dropped**, among them `US_PASSPORT`,

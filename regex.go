@@ -59,6 +59,8 @@ type recognizer struct {
 	// value's real end, rejecting it if there is none — so a token that
 	// happens to share the value's shape ("… 7034 BIC") cannot void the match.
 	trim func(text string, start, end int) (int, bool)
+	// find, when set, replaces re: the recognizer scans by hand.
+	find func(text string) [][]int
 }
 
 func builtinRecognizers() []recognizer {
@@ -121,6 +123,8 @@ func builtinRecognizers() []recognizer {
 		{typ: "IP", confidence: 0.8,
 			re:       regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`),
 			validate: validIP},
+		// IPv6, scanned by hand: see ipv6.go.
+		{typ: "IP", confidence: 0.8, find: findIPv6},
 		// Electronic format, any case.
 		{typ: "IBAN", confidence: 0.9,
 			re:       regexp.MustCompile(`(?i)\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b`),
@@ -261,6 +265,9 @@ func scan(recs []recognizer, text string) []Span {
 // a rejected match resumes one byte in. Either way the search restarts at a
 // non-word byte or inside a letter pair, so \b still reads correctly there.
 func (rec recognizer) hits(text string) [][]int {
+	if rec.find != nil {
+		return rec.find(text)
+	}
 	if rec.trim == nil {
 		return rec.re.FindAllStringIndex(text, -1)
 	}

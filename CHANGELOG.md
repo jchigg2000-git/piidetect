@@ -49,6 +49,11 @@
   escape and no form-encoded space is read once, with no allocation. Allow-list terms match the
   encoded form of a term too.
 
+- **IP:** IPv6 addresses were claimed only when the Presidio sidecar was in the chain, so the
+  floor alone sent `2001:db8:85a3::8a2e:370:7334` and SMTP `[IPv6:…]` literals in the clear. The
+  floor now finds full, `::`-compressed and IPv4-mapped addresses of three or more groups with a
+  linear scan; MACs, WWNs, clock times and `std::string` are not addresses.
+
 ### Fewer false positives
 
 - **CREDIT_CARD:** one in ten long numbers passes Luhn, and logs are full of them: epoch
