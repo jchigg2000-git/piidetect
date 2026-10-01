@@ -115,7 +115,7 @@ func (c *Chain) allowed(typ, span string) bool {
 		return true
 	}
 	// A term is ruled on as it reads, not as it is encoded: support%40example.com.
-	if dec, _, ok := decodedView(span); ok {
+	if dec, _, ok := normalizedView(span); ok {
 		_, hit := set[strings.ToLower(dec)]
 		return hit
 	}

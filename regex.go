@@ -220,8 +220,9 @@ func (r *Regex) Detect(ctx context.Context, text string) ([]Span, error) {
 	return Merge(spans), err
 }
 
-// detectRaw reads the text as given and, when it carries percent-encoding, as
-// decoded too. A span found only in the decoded text is judged there — the
+// detectRaw reads the text as given and, when it carries percent-encoding or
+// look-alike punctuation, as normalized too. A span found only in the
+// normalized text is judged there — the
 // recognizer's own validator and the type guard, whose context checks need the
 // decoded characters — then mapped back to the offsets of the text as given
 // and marked checked, so the chain does not judge it a second time against
@@ -229,7 +230,7 @@ func (r *Regex) Detect(ctx context.Context, text string) ([]Span, error) {
 func (r *Regex) detectRaw(_ context.Context, text string) ([]Span, error) {
 	recs := *r.compiled.Load()
 	spans := scan(recs, text)
-	if dec, orig, ok := decodedView(text); ok {
+	if dec, orig, ok := normalizedView(text); ok {
 		for _, sp := range scan(recs, dec) {
 			if guard, has := typeGuards[sp.Type]; has && !guard(dec, sp.Start, sp.End) {
 				continue

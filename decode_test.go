@@ -10,9 +10,9 @@ import (
 // wrong bytes.
 func TestDecodedViewMapsOffsets(t *testing.T) {
 	text := "a%40b+c%C3%BCd"
-	dec, orig, ok := decodedView(text)
+	dec, orig, ok := normalizedView(text)
 	if !ok || dec != "a@b cüd" {
-		t.Fatalf("decodedView(%q) = %q, %v", text, dec, ok)
+		t.Fatalf("normalizedView(%q) = %q, %v", text, dec, ok)
 	}
 	if len(orig) != len(dec)+1 || orig[len(dec)] != len(text) {
 		t.Fatalf("orig = %v, want one entry per decoded byte plus the text length", orig)
@@ -31,16 +31,16 @@ func TestDecodedViewOnlyForEncodedText(t *testing.T) {
 	for _, plain := range []string{
 		"", "Order 12 shipped", "100%", "50%4", "%zz and %4", "C++ and +1 415 555 0173", "1 +", "+x",
 	} {
-		if _, _, ok := decodedView(plain); ok {
-			t.Errorf("decodedView(%q) = ok, want no view", plain)
+		if _, _, ok := normalizedView(plain); ok {
+			t.Errorf("normalizedView(%q) = ok, want no view", plain)
 		}
 	}
-	if n := testing.AllocsPerRun(10, func() { decodedView("Order 12 shipped, 100%") }); n != 0 {
-		t.Errorf("plain text allocated %.0f times in decodedView", n)
+	if n := testing.AllocsPerRun(10, func() { normalizedView("Order 12 shipped, 100%") }); n != 0 {
+		t.Errorf("plain text allocated %.0f times in normalizedView", n)
 	}
 	for _, enc := range []string{"a%40b", "a+b", "x=%2B1"} {
-		if _, _, ok := decodedView(enc); !ok {
-			t.Errorf("decodedView(%q) = no view, want one", enc)
+		if _, _, ok := normalizedView(enc); !ok {
+			t.Errorf("normalizedView(%q) = no view, want one", enc)
 		}
 	}
 }
@@ -76,5 +76,56 @@ func TestAllowListMatchesEncodedForm(t *testing.T) {
 	c.SetPatternPack([]PatternRule{{ID: "ours", Type: "EMAIL", Kind: "allow_list", AllowList: []string{"support@example.com"}}})
 	if got, _ := c.Redact(context.Background(), text); got != "mailto:support%40example.com and mailto:[EMAIL]" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestNormalizedViewFoldsLookalikes(t *testing.T) {
+	text := "a–b c＠d é" // en dash, no-break space, fullwidth @, a letter that stays
+	view, orig, ok := normalizedView(text)
+	if !ok || view != "a-b c@d é" {
+		t.Fatalf("normalizedView(%q) = %q, %v", text, view, ok)
+	}
+	// a  –  b  nbsp  c  ＠  d  ' '  é(2 bytes)  end
+	want := []int{0, 1, 4, 5, 7, 8, 11, 12, 13, 14, 15}
+	if len(orig) != len(want) {
+		t.Fatalf("orig = %v, want %v", orig, want)
+	}
+	for i := range want {
+		if orig[i] != want[i] {
+			t.Fatalf("orig = %v, want %v", orig, want)
+		}
+	}
+	// Escapes and look-alikes compose: an en dash that arrives percent-encoded.
+	if view, orig, ok := normalizedView("1%E2%80%932"); !ok || view != "1-2" || orig[1] != 1 || orig[2] != 10 || orig[3] != 11 {
+		t.Errorf("normalizedView of an encoded en dash = %q %v %v", view, orig, ok)
+	}
+	// The em dash is a sentence's own punctuation, and accents are not look-alikes.
+	for _, plain := range []string{"9999—verified", "café naïve", "Order 12 shipped"} {
+		if _, _, ok := normalizedView(plain); ok {
+			t.Errorf("normalizedView(%q) = ok, want no view", plain)
+		}
+	}
+}
+
+// Documents pasted from a word processor or PDF keep the dash and the space
+// they were typeset with; the value must still be found, masked whole, and a
+// hyphenated identifier must still not be an SSN.
+func TestRedactUnicodeLookalikes(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"SSN 219–09–9999 ok", "SSN [SSN] ok"},
+		{"SSN 219‑09‑9999 ok", "SSN [SSN] ok"},
+		{"Tel 415–555–0173.", "Tel [PHONE]."},
+		{"Card 4111 1111 1111 1111 ok", "Card [CREDIT_CARD] ok"},
+		{"ＳＳＮ：２１９－０９－９９９９ ok", "ＳＳＮ：[SSN] ok"},
+		{"mail jane.doe＠example.org now", "mail [EMAIL] now"},
+		{"SSN%3A+219%E2%80%9309%E2%80%939999&x", "SSN%3A+[SSN]&x"},
+		{"Order ORD–123–45–6789 shipped", "Order ORD–123–45–6789 shipped"},
+		{"219—09—9999 and 3–5 pages", "219—09—9999 and 3–5 pages"},
+		// Read as given, the em dash after the value is punctuation.
+		{"SSN 219-09-9999—verified", "SSN [SSN]—verified"},
+	} {
+		if got, _ := New().Redact(context.Background(), c.in); got != c.want {
+			t.Errorf("Redact(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }

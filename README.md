@@ -55,11 +55,14 @@ checks belong to the regex floor's own recognizers:
 | `MRN` | the `MRN`, `Medical Record` or `Med Rec` label then 6–10 digits: `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567`, `Medical Record Number: 1234567`, `"medicalRecordNumber": "1234567"` | the label must start a word or a camelCase hump; a line break is crossed only after a separator |
 | `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `date of birth`, `born`, `birthDate`, `<dob>`, `<birthDate value="…">`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, and month names (`14-Mar-1985`, `14th March 1985`) | month 01–12, day 01–31 (range only, not calendar-aware); the label for the other forms |
 
-Query strings and form bodies are read twice, as given and decoded (`%XX` escapes, and `+` between
-letters or digits as a space), so labels, separators and values are found whatever their encoding
-(`mailto:jane.doe%40example.org`, `card=4111+1111+1111+1111`, `q=DOB%3A%203%2F14%2F1985`). Spans are
-mapped back onto the text as given, so `Mask` replaces the whole encoded value. The price is that a
-`+` is a space there: `123+45+6789` reads as an SSN. Text with neither is read once.
+Text that carries percent-encoding or look-alike punctuation is read twice, as given and normalized:
+`%XX` escapes are decoded, `+` between letters or digits is a space (query strings and form bodies:
+`mailto:jane.doe%40example.org`, `card=4111+1111+1111+1111`, `q=DOB%3A%203%2F14%2F1985`), and what a
+document pasted from a word processor or PDF carries is folded onto ASCII: the Unicode dashes that
+stand for a hyphen (`219–09–9999`, `415‑555‑0173`), non-breaking, thin and ideographic spaces
+(`4111 1111 1111 1111`), and fullwidth forms (`ＳＳＮ：２１９－０９－９９９９`). Spans are mapped back onto the
+text as given, so `Mask` replaces the whole value. The price is that a `+` is a space there:
+`123+45+6789` reads as an SSN. Text with none of these is read once.
 
 So these are left alone:
 
@@ -129,8 +132,9 @@ Stated plainly, because the failure mode of a redaction library is silent under-
 - **Bare 10-digit phone numbers** (`4155550173`) are not matched unless a phone label sits right
   before them, for the same reason as bare SSNs. As for MRN, a label's value on the next line is
   claimed only after a separator.
-- **Unicode dashes** (non-breaking hyphen, en dash) as SSN or phone separators are not matched;
-  the separator classes are ASCII.
+- **Other look-alikes** are not folded: the em dash (it is a sentence's punctuation, and
+  `219—09—9999` stays), zero-width characters and soft hyphens inside a number, and non-Latin digits
+  (Arabic-Indic, Devanagari).
 - **Doubly encoded values, HTML entities and JSON `\u` escapes** (`jane.doe%2540example.org`,
   `jane&#64;example.org`, `jane\u0040example.org`) are not decoded. Single percent-encoding and
   form-encoded spaces are; see above. The Presidio tier reads the text as given.

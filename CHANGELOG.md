@@ -54,6 +54,13 @@
   floor now finds full, `::`-compressed and IPv4-mapped addresses of three or more groups with a
   linear scan; MACs, WWNs, clock times and `std::string` are not addresses.
 
+- **SSN, PHONE, CREDIT_CARD, IBAN, MRN, DOB, EMAIL:** values pasted from documents with Unicode
+  look-alikes were missed: an en dash, non-breaking hyphen or minus sign as a separator
+  (`219–09–9999`, `415‑555‑0173`), non-breaking, narrow and ideographic spaces between card or IBAN
+  groups, and fullwidth forms (`ＳＳＮ：２１９－０９－９９９９`, `jane.doe＠example.org`). The normalized
+  text is read as well as the original and spans are mapped back; the em dash is not folded, so
+  `219—09—9999` and `ORD–123–45–6789` stay unclaimed.
+
 ### Fewer false positives
 
 - **CREDIT_CARD:** one in ten long numbers passes Luhn, and logs are full of them: epoch
