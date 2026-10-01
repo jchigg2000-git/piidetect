@@ -70,7 +70,8 @@ func builtinRecognizers() []recognizer {
 		// the words around it. The first character must be a letter, digit or
 		// underscore, which a leading \b used to enforce.
 		{typ: "EMAIL", confidence: 0.95,
-			re: regexp.MustCompile(`[` + emailLetters + `0-9_][` + emailLetters + `\p{M}0-9._%+'-]*@[` + emailLetters + `\p{M}0-9.-]+\.[` + emailLetters + `\p{M}]{2,}`)},
+			re:       regexp.MustCompile(`[` + emailLetters + `0-9_][` + emailLetters + `\p{M}0-9._%+'-]*@[` + emailLetters + `\p{M}0-9.-]+\.[` + emailLetters + `\p{M}]{2,}`),
+			validate: emailValid},
 		{typ: "SSN", confidence: 0.9,
 			re:       regexp.MustCompile(`\b\d{3}[- ]\d{2}[- ]\d{4}\b`),
 			validate: ssnValid},
@@ -160,6 +161,17 @@ func builtinRecognizers() []recognizer {
 				`)\b`),
 			validate: dobCue},
 	}
+}
+
+// retinaAsset matches the tail of an image file name that has the shape of an
+// address: logo@2x.png, icon@3x.jpg.
+var retinaAsset = regexp.MustCompile(`(?i)@[1-9]x\.(?:png|jpe?g|gif|webp|svg|avif|heic|bmp|ico|tiff?)$`)
+
+// emailValid rejects the high-density-display asset names (logo@2x.png) that
+// HTML, CSS and build output are full of: the "domain" 2x.png has an image
+// extension for a TLD. Image extensions are not TLDs, so no address is lost.
+func emailValid(text string, start, end int) bool {
+	return !retinaAsset.MatchString(text[start:end])
 }
 
 // emailLetters are the scripts an email address is matched in; see EMAIL.
@@ -466,14 +478,7 @@ func luhnValid(text string, start, end int) bool {
 	if len(digits) < 13 || len(digits) > 19 {
 		return false
 	}
-	// No 13-digit card number starts with 1, but every epoch-milliseconds
-	// timestamp does, and one in ten passes Luhn.
-	if len(digits) == 13 && digits[0] == 1 {
-		return false
-	}
-	// Four consecutive years ("visits 2023 2024 2025 2026") have the card
-	// layout, and one run in five passes Luhn.
-	if consecutiveYears(digits) {
+	if !issuable(digits) {
 		return false
 	}
 	sum, double := 0, false
@@ -491,19 +496,24 @@ func luhnValid(text string, start, end int) bool {
 	return sum%10 == 0
 }
 
-// consecutiveYears reports whether 16 digits read as four consecutive years
-// between 1900 and 2099.
-func consecutiveYears(digits []int) bool {
-	if len(digits) != 16 {
+// issuable reports whether a Luhn-checked run of 13–19 digits could be a card
+// some network issues, judging by its leading digits and length. Luhn alone
+// passes one random run in ten, and logs are full of long numbers that are
+// not cards: epoch milliseconds (13 digits), microseconds (16) and
+// nanoseconds (19), snowflake IDs (18–19), compact timestamps
+// (20260922143015) and years in card layout (2023 2024 2025 2026) all start
+// 1 or 20. No network issues from a leading 0 (an all-zero placeholder passes
+// Luhn), from a leading 1 other than 15-digit UATP, or from 2 outside the
+// Mir (2200–2204) and Mastercard (2221–2720) ranges.
+func issuable(d []int) bool {
+	switch d[0] {
+	case 0:
 		return false
-	}
-	prev := 0
-	for i := 0; i < 16; i += 4 {
-		y := digits[i]*1000 + digits[i+1]*100 + digits[i+2]*10 + digits[i+3]
-		if y < 1900 || y > 2099 || (i > 0 && y != prev+1) {
-			return false
-		}
-		prev = y
+	case 1:
+		return len(d) == 15
+	case 2:
+		p := d[0]*1000 + d[1]*100 + d[2]*10 + d[3]
+		return len(d) >= 16 && (p <= 2204 && p >= 2200 || p >= 2221 && p <= 2720)
 	}
 	return true
 }

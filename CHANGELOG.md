@@ -45,6 +45,14 @@
 
 ### Fewer false positives
 
+- **CREDIT_CARD:** one in ten long numbers passes Luhn, and logs are full of them: epoch
+  microseconds and nanoseconds, snowflake IDs, compact timestamps (`20260922143017`) and
+  `0000 0000 0000 0000` were masked as cards. A card must now start with a digit some network
+  issues from: not `0`, not `1` unless it is 15-digit UATP, and `2` only in the Mir (2200–2204)
+  and Mastercard (2221–2720) ranges. This replaces the epoch-milliseconds and consecutive-years
+  special cases, which it covers. The guard applies to every engine's claims.
+- **EMAIL:** retina asset names in HTML and CSS (`logo@2x.png`, `icon@3x.jpg`) were masked as
+  addresses; an image extension is not a top-level domain.
 - **CREDIT_CARD:** epoch-millisecond timestamps (`1727049600007`), one in ten of which passes Luhn.
 - **PHONE:** NANP numbers whose area code or exchange starts with 0 or 1 (`123-456-7890`).
 - **SSN:** numbers the SSA never issues (area `000` or `666`, group `00`, serial `0000`).

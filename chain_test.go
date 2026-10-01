@@ -141,3 +141,37 @@ func TestChainZeroTimeoutUsesDefault(t *testing.T) {
 		t.Errorf("errs = %v", errs)
 	}
 }
+
+// Luhn passes one random run in ten, so the guard also asks whether a network
+// could have issued the number: timestamps, snowflake IDs and placeholders
+// are overruled whichever engine claimed them, and an image asset name is not
+// an address. The boundaries of the Mir and Mastercard 2-series ranges hold.
+func TestChainGuardsRejectNumbersNoNetworkIssues(t *testing.T) {
+	for _, c := range []struct {
+		typ, value string
+		keep       bool
+	}{
+		{"CREDIT_CARD", "1727049600007000000", false}, // epoch nanoseconds
+		{"CREDIT_CARD", "1445078208190291973", false}, // snowflake ID
+		{"CREDIT_CARD", "1727049600007006", false},    // epoch microseconds
+		{"CREDIT_CARD", "20260922143017", false},      // compact timestamp
+		{"CREDIT_CARD", "0000 0000 0000 0000", false}, // placeholder
+		{"CREDIT_CARD", "2205000000000009", false},    // between Mir and Mastercard
+		{"CREDIT_CARD", "2721000000000004", false},    // above Mastercard
+		{"CREDIT_CARD", "2204000000000000", true},     // Mir, top
+		{"CREDIT_CARD", "2221000000000009", true},     // Mastercard, bottom
+		{"CREDIT_CARD", "2720000000000005", true},     // Mastercard, top
+		{"CREDIT_CARD", "135410014004955", true},      // UATP
+		{"EMAIL", "logo@2x.png", false},
+		{"EMAIL", "hero@3X.WebP", false},
+		{"EMAIL", "a@2x.com", true},
+	} {
+		text := "value: " + c.value + " end"
+		ch := &Chain{Timeout: time.Second, Detectors: []Detector{
+			fakeDetector{name: "presidio", spans: []Span{{Start: 7, End: 7 + len(c.value), Type: c.typ, Confidence: 0.6, Detector: "presidio"}}},
+		}}
+		if spans, _ := ch.Run(context.Background(), text); (len(spans) == 1) != c.keep {
+			t.Errorf("%s %q: kept = %v, want %v", c.typ, c.value, len(spans) == 1, c.keep)
+		}
+	}
+}

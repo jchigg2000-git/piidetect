@@ -66,5 +66,8 @@
   {"name": "phone_labelled_unformatted", "engines": ["regex"], "marked": "Contact {\"mobile\":\"«PHONE|4155550173»\"}, homePhone=«PHONE|14155550122», Fax «PHONE|2125550188»."},
   {"name": "mrn_long_labels", "engines": ["regex"], "marked": "Face sheet «MRN|Medical Record Number: 4481920», wristband «MRN|Med Rec # 5512093», {\"«MRN|medicalRecordNumber\": \"7730012»\"}."},
   {"name": "trap_unlabelled_digit_runs", "engines": ["regex"], "marked": "Order «TRAP|4155550173» shipped; smartphone «TRAP|4155550122» model; SSN verified, ref «TRAP|483920571»."},
-  {"name": "trap_ssn_header_row", "engines": ["regex"], "marked": "Name   SSN   Phone\n«TRAP|483920571» rows, «TRAP|4155550173» calls."}
+  {"name": "trap_ssn_header_row", "engines": ["regex"], "marked": "Name   SSN   Phone\n«TRAP|483920571» rows, «TRAP|4155550173» calls."},
+  {"name": "trap_cc_log_numbers", "engines": ["regex"], "marked": "Spans «TRAP|1727049600007006» us, «TRAP|1727049600007000000» ns, snowflake «TRAP|1445078208190291973», stamps «TRAP|2026092214301593» and «TRAP|20260922143017», placeholder «TRAP|0000 0000 0000 0000»."},
+  {"name": "cc_issuer_ranges", "engines": ["regex"], "marked": "Cards «CREDIT_CARD|2223003122003222» (Mastercard 2-series), «CREDIT_CARD|2202 0000 0000 0002» (Mir), «CREDIT_CARD|2720 0000 0000 0005», UATP «CREDIT_CARD|135410014004955»."},
+  {"name": "trap_email_retina_asset", "engines": ["regex"], "marked": "<img src=\"«TRAP|logo@2x.png»\" srcset=\"«TRAP|icon@3x.jpg» 3x\"> next to «EMAIL|a@2x.com» for support."}
 ]
