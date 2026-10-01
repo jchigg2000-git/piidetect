@@ -34,6 +34,8 @@
   from documents) was missed; only space, tab and U+00A0 counted.
 - **DOB:** a date glued to its birth cue (`DOB03/14/1985`, `dob1985-03-14`) was missed, and the
   plural cues `DOBs`, `birthdates` and `birthdays` were not cues.
+- **DOB:** a run of spaces inside a cue (`born  on`, `birth` U+00A0 `date`) voided it, and `birth day(s)`
+  was not a cue.
 
 ### Fewer false positives
 

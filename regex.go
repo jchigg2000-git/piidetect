@@ -334,6 +334,7 @@ var dobCues = []struct {
 	{"birthdate", false}, {"birth date", false}, {"birth_date", false},
 	{"dateofbirth", false}, {"birthday", false},
 	{"dobs", true}, {"birthdates", false}, {"birthdays", false},
+	{"birth day", false}, {"birth days", false},
 }
 
 // hSpace is horizontal whitespace: tab and the Unicode space separators
@@ -360,6 +361,9 @@ func dobCue(text string, start, _ int) bool {
 		}
 		before = strings.TrimRight(nl, dobPad)
 	}
+	// A run of spaces inside a cue ("born  on", "birth\u00a0date") counts as
+	// one space.
+	before = collapseHSpace(before)
 	// FHIR XML carries the date in an attribute: <birthDate value="…"/>.
 	before = strings.TrimSuffix(before, " value")
 	for _, c := range dobCues {
@@ -372,6 +376,28 @@ func dobCue(text string, start, _ int) bool {
 		}
 	}
 	return false
+}
+
+// collapseHSpace replaces each run of horizontal whitespace with one space.
+func collapseHSpace(s string) string {
+	if !strings.ContainsAny(s, hSpace) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	inSpace := false
+	for _, r := range s {
+		if strings.ContainsRune(hSpace, r) {
+			if !inSpace {
+				b.WriteByte(' ')
+			}
+			inSpace = true
+			continue
+		}
+		inSpace = false
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func luhnValid(text string, start, end int) bool {

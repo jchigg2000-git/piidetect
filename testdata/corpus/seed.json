@@ -60,5 +60,6 @@
   {"name": "trap_cc_consecutive_years", "engines": ["regex"], "marked": "Compare kept visits «TRAP|2023 2024 2025 2026»; top 10 «TRAP|2029 2030 2031 2032» kept visits."},
   {"name": "dob_glued_to_cue", "engines": ["regex"], "marked": "Form fields DOB«DOB|03/14/1985», dob«DOB|1985-03-14», Birthdate«DOB|3/14/1985» came through unspaced."},
   {"name": "dob_plural_cues", "engines": ["regex"], "marked": "Twins' DOBs: «DOB|3/14/2019»; parents' birthdates «DOB|1985-03-14»."},
-  {"name": "trap_date_glued_to_code", "engines": ["regex"], "marked": "Batch INV«TRAP|03/14/2024» and lot 7«TRAP|1/2/2024» posted overnight."}
+  {"name": "trap_date_glued_to_code", "engines": ["regex"], "marked": "Batch INV«TRAP|03/14/2024» and lot 7«TRAP|1/2/2024» posted overnight."},
+  {"name": "dob_cue_spacing", "engines": ["regex"], "marked": "She was born  on «DOB|14.03.1985»; his birth\u00a0date: «DOB|1961-07-02»; their birth day «DOB|3/20/2019»."}
 ]

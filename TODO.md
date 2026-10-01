@@ -28,9 +28,9 @@ What it does differently, so the two stay honest about each other:
     it: "Name   MRN"), so both header-row traps still pass there (55 of 55, 0 traps). Suggested the
     same here, with corpus entries for "Why was MRN\n4481920" and "DOB\n1985-03-14". *(Withdrawn
     later on 2026-09-27, see the last entry: the column-gap exception is unsafe.)*
-- **DOB cue words.** The port also takes "birth day(s)", a run of spaces in "born  on", and a
-  comma between cue and date. Low value; listed for parity. A comma is left out here on purpose:
-  "since birth, 3/20/2024" would claim a visit date.
+- **DOB cue words.** The port also takes a comma between cue and date. Left out here on purpose:
+  "since birth, 3/20/2024" would claim a visit date. ("birth day(s)" and a run of spaces in a cue
+  were adopted here 2026-10-01.)
 - **ZIP.** The port has an anchored ZIP recognizer (a case-sensitive state abbreviation, a ZIP or
   postal-code cue, or the ZIP+4 shape); this floor has none. Nothing suggested.
 - **A span outside the text.** This chain drops it and reports the detector's error; the port's
