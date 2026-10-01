@@ -29,12 +29,17 @@
 - **SSN, PHONE, CREDIT_CARD:** a label joined to its value by a hyphen (`SSN-219-09-9999`,
   `Tel-415-555-0173`, `CC-4111-…`) was rejected as a hyphenated identifier.
 - **MRN:** camelCase keys (`patientMrn`, `<PatientMRN>`) were rejected as the tail of a longer word.
+- **MRN:** a two-character separator (`MRN--4481920`, `MRN:-4481920`) was missed.
+- **MRN, DOB:** a Unicode space between label and value (U+2009, U+202F, U+3000, U+2007, as pasted
+  from documents) was missed; only space, tab and U+00A0 counted.
 
 ### Fewer false positives
 
 - **CREDIT_CARD:** epoch-millisecond timestamps (`1727049600007`), one in ten of which passes Luhn.
 - **PHONE:** NANP numbers whose area code or exchange starts with 0 or 1 (`123-456-7890`).
 - **SSN:** numbers the SSA never issues (area `000` or `666`, group `00`, serial `0000`).
+- **CREDIT_CARD:** four consecutive years in card layout (`visits 2023 2024 2025 2026`), one run
+  in five of which passes Luhn.
 
 ## v0.1.1 — 2026-09-23
 

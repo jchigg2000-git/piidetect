@@ -116,13 +116,15 @@ func builtinRecognizers() []recognizer {
 			re:   regexp.MustCompile(`\b[A-Z]{2}\d{2}(?: [A-Z0-9]{4}){2,7}(?: [A-Z0-9]{1,4})?\b`),
 			trim: ibanGrouped},
 		// The label, optionally "#", "No." or "Number", then any horizontal
-		// space around one optional separator. A line break is crossed only
+		// space (tab or any Unicode space, so U+2009 and U+3000 count) around
+		// an optional separator of one or two characters ("MRN--4481920",
+		// "MRN:-4481920"). A line break is crossed only
 		// after an explicit separator ("MRN:\n4481920"), so a table header
 		// ending in "MRN" never claims the first number of the next row.
 		// Quotes admit JSON and dict keys; mrnLabelStart stands in for a
 		// leading \b so that snake_case keys (patient_mrn) count too.
 		{typ: "MRN", confidence: 0.85,
-			re:       regexp.MustCompile(`(?i)MRN(?:[ \t\x{A0}]*(?:#|No\.?|Number))?["']?[ \t\x{A0}]*(?:[-:=#>][ \t\x{A0}]*(?:\r?\n[ \t\x{A0}]*)?)?["']?\d{6,10}\b`),
+			re:       regexp.MustCompile(`(?i)MRN(?:[\t\p{Zs}]*(?:#|No\.?|Number))?["']?[\t\p{Zs}]*(?:[-:=#>]{1,2}[\t\p{Zs}]*(?:\r?\n[\t\p{Zs}]*)?)?["']?\d{6,10}\b`),
 			validate: mrnLabelStart},
 		{typ: "DOB", confidence: 0.7,
 			re: regexp.MustCompile(`\b(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/(19|20)\d{2}\b`)},
@@ -330,10 +332,14 @@ var dobCues = []struct {
 	{"dateofbirth", false}, {"birthday", false},
 }
 
+// hSpace is horizontal whitespace: tab and the Unicode space separators
+// (Zs) people paste in, such as U+00A0, U+2007, U+2009, U+202F and U+3000.
+const hSpace = " \t\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000"
+
 // dobPad is what may sit between a birth label and its value: spaces,
 // punctuation, the quotes and "=" of a key, and the ">" or "|" closing a tag
 // or table cell.
-const dobPad = " \t:#.=-\"'(>|\u00a0"
+const dobPad = hSpace + ":#.=-\"'(>|"
 
 func dobCue(text string, start, _ int) bool {
 	lo := max(start-40, 0)
@@ -341,7 +347,7 @@ func dobCue(text string, start, _ int) bool {
 	// A line break is crossed only after an explicit separator, as for MRN,
 	// so a table header ending in "DOB" never claims the next row's date.
 	if nl := strings.TrimRight(before, "\r\n"); len(nl) < len(before) {
-		nl = strings.TrimRight(nl, " \t\u00a0")
+		nl = strings.TrimRight(nl, hSpace)
 		if nl == "" || !strings.ContainsRune("-:=#>", rune(nl[len(nl)-1])) {
 			return false
 		}
@@ -379,6 +385,11 @@ func luhnValid(text string, start, end int) bool {
 	if len(digits) == 13 && digits[0] == 1 {
 		return false
 	}
+	// Four consecutive years ("visits 2023 2024 2025 2026") have the card
+	// layout, and one run in five passes Luhn.
+	if consecutiveYears(digits) {
+		return false
+	}
 	sum, double := 0, false
 	for i := len(digits) - 1; i >= 0; i-- {
 		d := digits[i]
@@ -392,6 +403,23 @@ func luhnValid(text string, start, end int) bool {
 		double = !double
 	}
 	return sum%10 == 0
+}
+
+// consecutiveYears reports whether 16 digits read as four consecutive years
+// between 1900 and 2099.
+func consecutiveYears(digits []int) bool {
+	if len(digits) != 16 {
+		return false
+	}
+	prev := 0
+	for i := 0; i < 16; i += 4 {
+		y := digits[i]*1000 + digits[i+1]*100 + digits[i+2]*10 + digits[i+3]
+		if y < 1900 || y > 2099 || (i > 0 && y != prev+1) {
+			return false
+		}
+		prev = y
+	}
+	return true
 }
 
 // validIP confirms a dotted quad — octet range and no leading zeros, both of

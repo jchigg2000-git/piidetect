@@ -54,5 +54,8 @@
   {"name": "mrn_camel_case_keys", "engines": ["regex"], "marked": "{\"patient«MRN|Mrn\": \"4481920»\"} <Patient«MRN|MRN>5512093»</PatientMRN>"},
   {"name": "trap_epoch_millis", "engines": ["regex"], "marked": "Event {\"ts\":«TRAP|1727049600007»} logged."},
   {"name": "trap_nanp_placeholder", "engines": ["regex"], "marked": "Order «TRAP|123-456-7890» is on hold."},
-  {"name": "trap_ssn_never_issued", "engines": ["regex"], "marked": "Template SSN «TRAP|000-00-0000», test value «TRAP|666-12-3456»."}
+  {"name": "trap_ssn_never_issued", "engines": ["regex"], "marked": "Template SSN «TRAP|000-00-0000», test value «TRAP|666-12-3456»."},
+  {"name": "mrn_double_separator", "engines": ["regex"], "marked": "Merged charts «MRN|MRN--4481920» and «MRN|MRN:-5512093» on review."},
+  {"name": "labels_unicode_spaces", "engines": ["regex"], "marked": "Pasted: «MRN|MRN:\u20094481920», «MRN|MRN\u3000#\u202f5512093», DOB:\u2007«DOB|1985-03-14», born\u202f«DOB|03/14/1985»."},
+  {"name": "trap_cc_consecutive_years", "engines": ["regex"], "marked": "Compare kept visits «TRAP|2023 2024 2025 2026»; top 10 «TRAP|2029 2030 2031 2032» kept visits."}
 ]
