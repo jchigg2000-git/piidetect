@@ -14,10 +14,10 @@ import (
 // hostile input) recognizers plus a hot-swappable pattern-pack overlay the
 // flywheel extends at runtime.
 //
-// Deliberate v0 misses (they are the flywheel's first demo): bare 9-digit
-// SSNs, bare MRNs without a prefix, non-zero-padded or ISO dates with no
-// birth label in front, and all free-text PHI (names, addresses — Presidio's
-// job).
+// Deliberate v0 misses (they are the flywheel's first demo): 9-digit SSNs
+// and 10-digit phone numbers with no label in front, bare MRNs without a
+// label, non-zero-padded or ISO dates with no birth label in front, and all
+// free-text PHI (names, addresses — Presidio's job).
 type Regex struct {
 	compiled atomic.Pointer[[]recognizer]
 }
@@ -74,6 +74,12 @@ func builtinRecognizers() []recognizer {
 		{typ: "SSN", confidence: 0.9,
 			re:       regexp.MustCompile(`\b\d{3}[- ]\d{2}[- ]\d{4}\b`),
 			validate: ssnValid},
+		// An unformatted SSN, but only right after an SSN label ("SSN:
+		// 078051120", {"ssn":"078051120"}): unlabeled, nine digits are far more
+		// often an order or account number.
+		{typ: "SSN", confidence: 0.85,
+			re:       regexp.MustCompile(`\b\d{9}\b`),
+			validate: func(text string, start, end int) bool { return ssnValid(text, start, end) && ssnCue(text, start, end) }},
 		// NANP. No \b on either side: nanpValid bounds the hit by non-digits
 		// instead, so "Tel415-555-0173" and "…0173x204" still count.
 		{typ: "PHONE", confidence: 0.85,
@@ -85,6 +91,14 @@ func builtinRecognizers() []recognizer {
 		{typ: "PHONE", confidence: 0.85,
 			re:       regexp.MustCompile(`\b1(?:[-. ]?\(\d{3}\)[-. ]?|[-. ]\d{3}[-. ])\d{3}[-. ]\d{4}`),
 			validate: nanpValid},
+		// An unformatted NANP number, but only right after a phone label
+		// ("Phone: 4155550173", {"mobile":"4155550173"}), for the same reason
+		// as the unformatted SSN above.
+		{typ: "PHONE", confidence: 0.8,
+			re: regexp.MustCompile(`\b1?\d{10}\b`),
+			validate: func(text string, start, end int) bool {
+				return nanpValid(text, start, end) && phoneCue(text, start, end)
+			}},
 		{typ: "PHONE", confidence: 0.85,
 			re: regexp.MustCompile(`\+[1-9]\d{9,14}\b`)},
 		// International numbers as printed: country code, a separator, then
@@ -115,7 +129,8 @@ func builtinRecognizers() []recognizer {
 		{typ: "IBAN", confidence: 0.9,
 			re:   regexp.MustCompile(`\b[A-Z]{2}\d{2}(?: [A-Z0-9]{4}){2,7}(?: [A-Z0-9]{1,4})?\b`),
 			trim: ibanGrouped},
-		// The label, optionally "#", "No." or "Number", then any horizontal
+		// The label ("MRN", "Medical Record", "Med Rec"), optionally "#",
+		// "No.", "Num" or "Number", then any horizontal
 		// space (tab or any Unicode space, so U+2009 and U+3000 count) around
 		// an optional separator of one or two characters ("MRN--4481920",
 		// "MRN:-4481920"). A line break is crossed only
@@ -124,7 +139,7 @@ func builtinRecognizers() []recognizer {
 		// Quotes admit JSON and dict keys; mrnLabelStart stands in for a
 		// leading \b so that snake_case keys (patient_mrn) count too.
 		{typ: "MRN", confidence: 0.85,
-			re:       regexp.MustCompile(`(?i)MRN(?:[\t\p{Zs}]*(?:#|No\.?|Number))?["']?[\t\p{Zs}]*(?:[-:=#>]{1,2}[\t\p{Zs}]*(?:\r?\n[\t\p{Zs}]*)?)?["']?\d{6,10}\b`),
+			re:       regexp.MustCompile(`(?i)(?:MRN|medical[\t\p{Zs}_-]*record|med\.?[\t\p{Zs}_-]*rec\.?)(?:[\t\p{Zs}_]*(?:#|No\.?|Num(?:ber)?))?["']?[\t\p{Zs}]*(?:[-:=#>]{1,2}[\t\p{Zs}]*(?:\r?\n[\t\p{Zs}]*)?)?["']?\d{6,10}\b`),
 			validate: mrnLabelStart},
 		{typ: "DOB", confidence: 0.7,
 			re: regexp.MustCompile(`\b(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/(19|20)\d{2}\b`)},
@@ -322,20 +337,51 @@ func mrnLabelStart(text string, start, _ int) bool {
 	return prev >= 'a' && prev <= 'z' && text[start] == 'M'
 }
 
-// dobCues are the labels that make a bare date a date of birth, matched
-// against the text immediately before it. The short ones must start a word
-// (stillbirth, newborn); the compounds may be glued to a camelCase or
-// snake_case prefix (patientBirthDate).
-var dobCues = []struct {
-	cue       string
-	wordStart bool
-}{
-	{"dob", true}, {"d.o.b", true}, {"birth", true}, {"born", true}, {"born on", true},
-	{"birthdate", false}, {"birth date", false}, {"birth_date", false},
-	{"dateofbirth", false}, {"birthday", false},
-	{"dobs", true}, {"birthdates", false}, {"birthdays", false},
-	{"birth day", false}, {"birth days", false},
+// cueStart says where a label may begin. The short labels must start a word
+// (stillbirth, newborn, smartphone); some may also follow a camelCase hump
+// (memberSsn, homePhone); compounds may be glued to any prefix
+// (patientBirthDate, mobile_phone_number).
+type cueStart int
+
+const (
+	cueWord       cueStart = iota // after a non-letter or the start of the text
+	cueWordOrHump                 // or after a lowercase letter, if the label is capitalized
+	cueAnywhere
+)
+
+type cue struct {
+	label string
+	start cueStart
 }
+
+// dobCues are the labels that make a bare date a date of birth.
+var dobCues = []cue{
+	{"dob", cueWord}, {"d.o.b", cueWord}, {"birth", cueWord}, {"born", cueWord}, {"born on", cueWord},
+	{"birthdate", cueAnywhere}, {"birth date", cueAnywhere}, {"birth_date", cueAnywhere},
+	{"dateofbirth", cueAnywhere}, {"birthday", cueAnywhere},
+	{"dobs", cueWord}, {"birthdates", cueAnywhere}, {"birthdays", cueAnywhere},
+	{"birth day", cueAnywhere}, {"birth days", cueAnywhere},
+}
+
+// ssnCues are the labels that make nine bare digits an SSN.
+var ssnCues = []cue{
+	{"ssn", cueWordOrHump}, {"ssns", cueWordOrHump}, {"ssn no", cueWordOrHump}, {"ssn number", cueWordOrHump},
+	{"social security", cueWord}, {"social security no", cueWord}, {"social security number", cueWord},
+	{"socialsecuritynumber", cueAnywhere}, {"social_security_number", cueAnywhere},
+}
+
+// phoneCues are the labels that make ten bare digits a phone number.
+var phoneCues = []cue{
+	{"phone", cueWordOrHump}, {"phones", cueWordOrHump}, {"tel", cueWordOrHump}, {"telephone", cueWordOrHump},
+	{"mobile", cueWordOrHump}, {"cell", cueWordOrHump}, {"fax", cueWordOrHump},
+	{"phone no", cueWordOrHump}, {"phone number", cueWordOrHump}, {"mobile number", cueWordOrHump},
+	{"cell number", cueWordOrHump}, {"fax number", cueWordOrHump},
+	{"phonenumber", cueAnywhere}, {"phone_number", cueAnywhere},
+}
+
+func dobCue(text string, start, _ int) bool   { return labelledBy(text, start, dobCues) }
+func ssnCue(text string, start, _ int) bool   { return labelledBy(text, start, ssnCues) }
+func phoneCue(text string, start, _ int) bool { return labelledBy(text, start, phoneCues) }
 
 // hSpace is horizontal whitespace: tab and the Unicode space separators
 // (Zs) people paste in, such as U+00A0, U+2007, U+2009, U+202F and U+3000.
@@ -346,14 +392,16 @@ const hSpace = " \t\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\
 // or table cell.
 const dobPad = hSpace + ":#.=-\"'(>|"
 
-func dobCue(text string, start, _ int) bool {
+// labelledBy reports whether one of cues sits immediately before the value
+// at start, matched case-insensitively.
+func labelledBy(text string, start int, cues []cue) bool {
 	if start > 0 && isDigit(text[start-1]) {
 		return false
 	}
 	lo := max(start-40, 0)
-	before := strings.TrimRight(strings.ToLower(text[lo:start]), dobPad)
+	before := strings.TrimRight(text[lo:start], dobPad)
 	// A line break is crossed only after an explicit separator, as for MRN,
-	// so a table header ending in "DOB" never claims the next row's date.
+	// so a table header ending in a label never claims the next row's value.
 	if nl := strings.TrimRight(before, "\r\n"); len(nl) < len(before) {
 		nl = strings.TrimRight(nl, hSpace)
 		if nl == "" || !strings.ContainsRune("-:=#>", rune(nl[len(nl)-1])) {
@@ -364,14 +412,19 @@ func dobCue(text string, start, _ int) bool {
 	// A run of spaces inside a cue ("born  on", "birth\u00a0date") counts as
 	// one space.
 	before = collapseHSpace(before)
-	// FHIR XML carries the date in an attribute: <birthDate value="…"/>.
-	before = strings.TrimSuffix(before, " value")
-	for _, c := range dobCues {
-		if !strings.HasSuffix(before, c.cue) {
+	// FHIR XML carries the value in an attribute: <birthDate value="…"/>.
+	if n := len(before) - len(" value"); n >= 0 && strings.EqualFold(before[n:], " value") {
+		before = before[:n]
+	}
+	for _, c := range cues {
+		i := len(before) - len(c.label)
+		if i < 0 || !strings.EqualFold(before[i:], c.label) {
 			continue
 		}
-		i := len(before) - len(c.cue)
-		if !c.wordStart || i == 0 || !isAlpha(before[i-1]) {
+		if c.start == cueAnywhere || i == 0 || !isAlpha(before[i-1]) {
+			return true
+		}
+		if c.start == cueWordOrHump && isLower(before[i-1]) && isUpper(before[i]) {
 			return true
 		}
 	}
@@ -565,3 +618,7 @@ func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 func isAlpha(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
 
 func isAlnum(c byte) bool { return isDigit(c) || isAlpha(c) }
+
+func isLower(c byte) bool { return c >= 'a' && c <= 'z' }
+
+func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }

@@ -46,13 +46,13 @@ checks belong to the regex floor's own recognizers:
 
 | Type | Recognized | Confirmed by |
 |---|---|---|
-| `SSN` | `123-45-6789`, `123 45 6789`, `SSN-123-45-6789` | never-issued numbers (area `000`/`666`, group `00`, serial `0000`) rejected; not glued to a hyphenated identifier other than a label (`SSN-`, `Tel-`, `CC-`) |
+| `SSN` | `123-45-6789`, `123 45 6789`, `SSN-123-45-6789`; unformatted (`078051120`) only after an SSN label (`SSN:`, `"ssn":`, `memberSsn=`, `Social Security Number`) | never-issued numbers (area `000`/`666`, group `00`, serial `0000`) rejected; not glued to a hyphenated identifier other than a label (`SSN-`, `Tel-`, `CC-`) |
 | `CREDIT_CARD` | 13–19 digits, spaced or dashed; a following expiry or CVV does not hide it | Luhn checksum + hyphen adjacency; a 13-digit run starting with `1` is an epoch-milliseconds timestamp, not a card |
 | `IBAN` | electronic (`DE89370400440532013000`, any case) and printed (`DE89 3704 0044 0532 0130 00`); hyphen-grouped when the Presidio tier claims it | mod-97 check digits + the country's registered length |
 | `IP` | dotted quad (IPv6 and CIDR when the Presidio tier claims them) | octet range, no leading zeros, not part of a longer dotted run such as an OID |
 | `EMAIL` | RFC-ish local@domain.tld, in Latin, Greek or Cyrillic letters (`müller@münchen.de`) | — |
-| `PHONE` | NANP (with or without `+1` / `1-`), E.164, and international numbers as printed (`+44 20 7946 0958`, `+55 (11) 91234-5678`) | NANP: area code and exchange start 2–9, not part of a longer digit run, hyphen adjacency |
-| `MRN` | the `MRN` label then 6–10 digits: `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567` | the label must start a word or a camelCase hump; a line break is crossed only after a separator |
+| `PHONE` | NANP (with or without `+1` / `1-`), E.164, and international numbers as printed (`+44 20 7946 0958`, `+55 (11) 91234-5678`); unformatted NANP (`4155550173`) only after a phone label (`Phone:`, `"mobile":`, `homePhone=`, `Fax`) | NANP: area code and exchange start 2–9, not part of a longer digit run, hyphen adjacency |
+| `MRN` | the `MRN`, `Medical Record` or `Med Rec` label then 6–10 digits: `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567`, `Medical Record Number: 1234567`, `"medicalRecordNumber": "1234567"` | the label must start a word or a camelCase hump; a line break is crossed only after a separator |
 | `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `date of birth`, `born`, `birthDate`, `<dob>`, `<birthDate value="…">`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, and month names (`14-Mar-1985`, `14th March 1985`) | month 01–12, day 01–31 (range only, not calendar-aware); the label for the other forms |
 
 So these are left alone:
@@ -112,16 +112,17 @@ cannot be used to smuggle real PII past the filter by sitting next to it.
 
 Stated plainly, because the failure mode of a redaction library is silent under-detection:
 
-- **Bare 9-digit SSNs** (`078051120`) are not matched. The false-positive rate against order
-  numbers, account numbers, and zip+4 runs was not worth it.
+- **Bare 9-digit SSNs** (`078051120`) are not matched unless an SSN label sits right before them.
+  The false-positive rate against order numbers, account numbers, and zip+4 runs was not worth it.
 - **Bare MRNs** without an `MRN` prefix are not matched, for the same reason. Neither is an `MRN`
   label with its value on the next line and no separator between them: a table header ending in
   `MRN` would otherwise claim the first number of the next row.
 - **Dates other than `MM/DD/YYYY`** (`3/14/1985`, `1985-03-14`, `14.03.1985`) are only claimed as
   `DOB` right after a birth label. Unlabeled, they are almost always appointment, invoice, or log
   dates.
-- **Bare 10-digit phone numbers** (`4155550173`) are not matched, for the same reason as bare
-  SSNs.
+- **Bare 10-digit phone numbers** (`4155550173`) are not matched unless a phone label sits right
+  before them, for the same reason as bare SSNs. As for MRN, a label's value on the next line is
+  claimed only after a separator.
 - **Unicode dashes** (non-breaking hyphen, en dash) as SSN or phone separators are not matched;
   the separator classes are ASCII.
 - **URL- and form-encoded values** (`jane.doe%40example.org`, `4111+1111+1111+1111`) are not

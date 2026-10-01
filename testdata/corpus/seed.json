@@ -61,5 +61,10 @@
   {"name": "dob_glued_to_cue", "engines": ["regex"], "marked": "Form fields DOB«DOB|03/14/1985», dob«DOB|1985-03-14», Birthdate«DOB|3/14/1985» came through unspaced."},
   {"name": "dob_plural_cues", "engines": ["regex"], "marked": "Twins' DOBs: «DOB|3/14/2019»; parents' birthdates «DOB|1985-03-14»."},
   {"name": "trap_date_glued_to_code", "engines": ["regex"], "marked": "Batch INV«TRAP|03/14/2024» and lot 7«TRAP|1/2/2024» posted overnight."},
-  {"name": "dob_cue_spacing", "engines": ["regex"], "marked": "She was born  on «DOB|14.03.1985»; his birth\u00a0date: «DOB|1961-07-02»; their birth day «DOB|3/20/2019»."}
+  {"name": "dob_cue_spacing", "engines": ["regex"], "marked": "She was born  on «DOB|14.03.1985»; his birth\u00a0date: «DOB|1961-07-02»; their birth day «DOB|3/20/2019»."},
+  {"name": "ssn_labelled_unformatted", "engines": ["regex"], "marked": "Payload {\"ssn\":\"«SSN|078051120»\"}; form SSN No. «SSN|219099999»; memberSsn=«SSN|219091234»; Social Security Number: «SSN|078051120»."},
+  {"name": "phone_labelled_unformatted", "engines": ["regex"], "marked": "Contact {\"mobile\":\"«PHONE|4155550173»\"}, homePhone=«PHONE|14155550122», Fax «PHONE|2125550188»."},
+  {"name": "mrn_long_labels", "engines": ["regex"], "marked": "Face sheet «MRN|Medical Record Number: 4481920», wristband «MRN|Med Rec # 5512093», {\"«MRN|medicalRecordNumber\": \"7730012»\"}."},
+  {"name": "trap_unlabelled_digit_runs", "engines": ["regex"], "marked": "Order «TRAP|4155550173» shipped; smartphone «TRAP|4155550122» model; SSN verified, ref «TRAP|483920571»."},
+  {"name": "trap_ssn_header_row", "engines": ["regex"], "marked": "Name   SSN   Phone\n«TRAP|483920571» rows, «TRAP|4155550173» calls."}
 ]

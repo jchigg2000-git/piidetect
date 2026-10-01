@@ -36,6 +36,12 @@
   plural cues `DOBs`, `birthdates` and `birthdays` were not cues.
 - **DOB:** a run of spaces inside a cue (`born  on`, `birth` U+00A0 `date`) voided it, and `birth day(s)`
   was not a cue.
+- **SSN, PHONE:** an unformatted value right after its label was missed, so a JSON payload
+  `{"ssn":"078051120","phone":"4155550173"}` went out in the clear. Nine digits after an SSN label
+  (`SSN:`, `"ssn":`, `memberSsn=`, `Social Security Number`) and ten after a phone label (`Phone:`,
+  `"mobile":`, `homePhone=`, `Fax`) now count; unlabeled digit runs are still left alone.
+- **MRN:** the long-form labels `Medical Record Number`, `Medical Record #`, `Med Rec No.` and the
+  keys `medicalRecordNumber` / `medical_record_number` were not labels.
 
 ### Fewer false positives
 
