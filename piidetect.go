@@ -27,6 +27,10 @@ type Span struct {
 	Type       string  `json:"type"`
 	Confidence float64 `json:"confidence"`
 	Detector   string  `json:"detector"`
+
+	// checked marks a span its engine has already judged against the text
+	// it was found in; see Regex.detectRaw.
+	checked bool
 }
 
 // Detector is implemented by every engine.
@@ -107,8 +111,15 @@ func (c *Chain) allowed(typ, span string) bool {
 	if !ok {
 		return false
 	}
-	_, hit := set[strings.ToLower(span)]
-	return hit
+	if _, hit := set[strings.ToLower(span)]; hit {
+		return true
+	}
+	// A term is ruled on as it reads, not as it is encoded: support%40example.com.
+	if dec, _, ok := decodedView(span); ok {
+		_, hit := set[strings.ToLower(dec)]
+		return hit
+	}
+	return false
 }
 
 // Run returns merged, guard-validated spans plus one error per failed engine.
@@ -146,7 +157,7 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 				bad++
 				continue
 			}
-			if guard, ok := typeGuards[sp.Type]; ok && !guard(text, sp.Start, sp.End) {
+			if guard, ok := typeGuards[sp.Type]; ok && !sp.checked && !guard(text, sp.Start, sp.End) {
 				continue
 			}
 			if c.allowed(sp.Type, text[sp.Start:sp.End]) {

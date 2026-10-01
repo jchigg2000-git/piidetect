@@ -55,6 +55,12 @@ checks belong to the regex floor's own recognizers:
 | `MRN` | the `MRN`, `Medical Record` or `Med Rec` label then 6–10 digits: `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567`, `Medical Record Number: 1234567`, `"medicalRecordNumber": "1234567"` | the label must start a word or a camelCase hump; a line break is crossed only after a separator |
 | `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `date of birth`, `born`, `birthDate`, `<dob>`, `<birthDate value="…">`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, and month names (`14-Mar-1985`, `14th March 1985`) | month 01–12, day 01–31 (range only, not calendar-aware); the label for the other forms |
 
+Query strings and form bodies are read twice, as given and decoded (`%XX` escapes, and `+` between
+letters or digits as a space), so labels, separators and values are found whatever their encoding
+(`mailto:jane.doe%40example.org`, `card=4111+1111+1111+1111`, `q=DOB%3A%203%2F14%2F1985`). Spans are
+mapped back onto the text as given, so `Mask` replaces the whole encoded value. The price is that a
+`+` is a space there: `123+45+6789` reads as an SSN. Text with neither is read once.
+
 So these are left alone:
 
 ```go
@@ -125,8 +131,9 @@ Stated plainly, because the failure mode of a redaction library is silent under-
   claimed only after a separator.
 - **Unicode dashes** (non-breaking hyphen, en dash) as SSN or phone separators are not matched;
   the separator classes are ASCII.
-- **URL- and form-encoded values** (`jane.doe%40example.org`, `4111+1111+1111+1111`) are not
-  matched. Decode request bodies and query strings before scanning them.
+- **Doubly encoded values, HTML entities and JSON `\u` escapes** (`jane.doe%2540example.org`,
+  `jane&#64;example.org`, `jane\u0040example.org`) are not decoded. Single percent-encoding and
+  form-encoded spaces are; see above. The Presidio tier reads the text as given.
 - **Email addresses written in scripts without spaces** (Chinese, Japanese, Thai) are not matched
   in those scripts: the address would absorb the words around it. ASCII addresses inside such
   text are.

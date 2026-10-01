@@ -43,6 +43,12 @@
 - **MRN:** the long-form labels `Medical Record Number`, `Medical Record #`, `Med Rec No.` and the
   keys `medicalRecordNumber` / `medical_record_number` were not labels.
 
+- **All types:** percent-encoded values from a URL query or form body (`jane.doe%40example.org`,
+  `4111+1111+1111+1111`, `DOB%3A%203%2F14%2F1985`, `tel=%2B14155550173`) were missed. The floor now
+  also reads the decoded text and maps spans back to the offsets of the text as given; text with no
+  escape and no form-encoded space is read once, with no allocation. Allow-list terms match the
+  encoded form of a term too.
+
 ### Fewer false positives
 
 - **CREDIT_CARD:** one in ten long numbers passes Luhn, and logs are full of them: epoch

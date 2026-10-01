@@ -69,5 +69,8 @@
   {"name": "trap_ssn_header_row", "engines": ["regex"], "marked": "Name   SSN   Phone\n«TRAP|483920571» rows, «TRAP|4155550173» calls."},
   {"name": "trap_cc_log_numbers", "engines": ["regex"], "marked": "Spans «TRAP|1727049600007006» us, «TRAP|1727049600007000000» ns, snowflake «TRAP|1445078208190291973», stamps «TRAP|2026092214301593» and «TRAP|20260922143017», placeholder «TRAP|0000 0000 0000 0000»."},
   {"name": "cc_issuer_ranges", "engines": ["regex"], "marked": "Cards «CREDIT_CARD|2223003122003222» (Mastercard 2-series), «CREDIT_CARD|2202 0000 0000 0002» (Mir), «CREDIT_CARD|2720 0000 0000 0005», UATP «CREDIT_CARD|135410014004955»."},
-  {"name": "trap_email_retina_asset", "engines": ["regex"], "marked": "<img src=\"«TRAP|logo@2x.png»\" srcset=\"«TRAP|icon@3x.jpg» 3x\"> next to «EMAIL|a@2x.com» for support."}
+  {"name": "trap_email_retina_asset", "engines": ["regex"], "marked": "<img src=\"«TRAP|logo@2x.png»\" srcset=\"«TRAP|icon@3x.jpg» 3x\"> next to «EMAIL|a@2x.com» for support."},
+  {"name": "encoded_query_values", "engines": ["regex"], "marked": "GET /app?email=«EMAIL|jane.doe%40example.org»&dob=«DOB|03%2F14%2F1985»&ssn=«SSN|219%2009%209999»&card=«CREDIT_CARD|4111+1111+1111+1111»&tel=«PHONE|%2B14155550173»&fax=«PHONE|415+555+0173»"},
+  {"name": "encoded_form_labels", "engines": ["regex"], "marked": "note=Patient+DOB%3A+«DOB|3%2F14%2F1985»+«MRN|MRN%3A%204481920»+SSN%3A+«SSN|219-09-9999»"},
+  {"name": "trap_encoded_not_pii", "engines": ["regex"], "marked": "q=C%2B%2B+tutorial&page=100%25&n=a+b&ref=«TRAP|ORD%2D123%2D45%2D6789»&total=1%2B1"}
 ]

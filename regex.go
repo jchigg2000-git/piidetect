@@ -216,9 +216,31 @@ func (r *Regex) Detect(ctx context.Context, text string) ([]Span, error) {
 	return Merge(spans), err
 }
 
+// detectRaw reads the text as given and, when it carries percent-encoding, as
+// decoded too. A span found only in the decoded text is judged there — the
+// recognizer's own validator and the type guard, whose context checks need the
+// decoded characters — then mapped back to the offsets of the text as given
+// and marked checked, so the chain does not judge it a second time against
+// escapes it cannot read.
 func (r *Regex) detectRaw(_ context.Context, text string) ([]Span, error) {
+	recs := *r.compiled.Load()
+	spans := scan(recs, text)
+	if dec, orig, ok := decodedView(text); ok {
+		for _, sp := range scan(recs, dec) {
+			if guard, has := typeGuards[sp.Type]; has && !guard(dec, sp.Start, sp.End) {
+				continue
+			}
+			sp.Start, sp.End, sp.checked = orig[sp.Start], orig[sp.End], true
+			spans = append(spans, sp)
+		}
+	}
+	return spans, nil
+}
+
+// scan returns every validated hit of recs in text, unmerged.
+func scan(recs []recognizer, text string) []Span {
 	var spans []Span
-	for _, rec := range *r.compiled.Load() {
+	for _, rec := range recs {
 		for _, loc := range rec.hits(text) {
 			start, end := loc[0], loc[1]
 			if rec.validate != nil && !rec.validate(text, start, end) {
@@ -230,7 +252,7 @@ func (r *Regex) detectRaw(_ context.Context, text string) ([]Span, error) {
 			})
 		}
 	}
-	return spans, nil
+	return spans
 }
 
 // hits returns rec's matches, each cut back by rec.trim when it has one. A
