@@ -133,12 +133,15 @@ func builtinRecognizers() []recognizer {
 		// (14-Mar-1985, 14th March 1985).
 		// Unlabeled, these shapes are overwhelmingly appointment, invoice and
 		// log dates, so dobCue requires a birth label right before the value.
+		// The digit-led shapes open without \b so a date glued to its cue
+		// ("DOB03/14/1985", "dob1985-03-14") is found; dobCue rejects a
+		// digit before the value, which \b used to.
 		{typ: "DOB", confidence: 0.7,
-			re: regexp.MustCompile(`(?i)\b(?:` +
+			re: regexp.MustCompile(`(?i)(?:` +
 				`(?:0?[1-9]|[12]\d|3[01])[-/.](?:0?[1-9]|[12]\d|3[01])[-/.](?:19|20)?\d{2}` +
 				`|(?:19|20)\d{2}[-/.](?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01])` +
 				`|(?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?(?:\.? |-)(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*(?:\.?,? |-)(?:19|20)?\d{2}` +
-				`|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? (?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?,? (?:19|20)\d{2}` +
+				`|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? (?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?,? (?:19|20)\d{2}` +
 				`)\b`),
 			validate: dobCue},
 	}
@@ -330,6 +333,7 @@ var dobCues = []struct {
 	{"dob", true}, {"d.o.b", true}, {"birth", true}, {"born", true}, {"born on", true},
 	{"birthdate", false}, {"birth date", false}, {"birth_date", false},
 	{"dateofbirth", false}, {"birthday", false},
+	{"dobs", true}, {"birthdates", false}, {"birthdays", false},
 }
 
 // hSpace is horizontal whitespace: tab and the Unicode space separators
@@ -342,6 +346,9 @@ const hSpace = " \t\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\
 const dobPad = hSpace + ":#.=-\"'(>|"
 
 func dobCue(text string, start, _ int) bool {
+	if start > 0 && isDigit(text[start-1]) {
+		return false
+	}
 	lo := max(start-40, 0)
 	before := strings.TrimRight(strings.ToLower(text[lo:start]), dobPad)
 	// A line break is crossed only after an explicit separator, as for MRN,

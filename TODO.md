@@ -1,8 +1,9 @@
 # TODO
 
 Notes left here from other repos' sessions. This repo's own session decides what to do with each.
-Done and removed (2026-10-01): MRN two-character separator, Unicode spaces after a label, and the
-four-consecutive-years card false positive; see CHANGELOG Unreleased.
+Done and removed (2026-10-01): MRN two-character separator, Unicode spaces after a label, the
+four-consecutive-years card false positive, a date glued to its birth cue, and the plural DOB
+cues; see CHANGELOG Unreleased.
 
 ## 2026-09-27 — from ask-meadowlark: its port of the floor, synced to v0.1.1 and d04df64
 
@@ -27,11 +28,9 @@ What it does differently, so the two stay honest about each other:
     it: "Name   MRN"), so both header-row traps still pass there (55 of 55, 0 traps). Suggested the
     same here, with corpus entries for "Why was MRN\n4481920" and "DOB\n1985-03-14". *(Withdrawn
     later on 2026-09-27, see the last entry: the column-gap exception is unsafe.)*
-  - *A date glued to its birth cue*: "DOB03/14/1985", "dob1985-03-14", "Birthdate03/14/1985". The
-    DOB shape opens with `\b`, which a letter-digit join does not satisfy. The port opens with "not
-    after a digit" instead; RE2 has no lookbehind, so here the check would go in the validator.
-- **DOB cue words.** The port also takes "dobs", "birthdays", "birth day(s)", "birthdates", a run
-  of spaces in "born  on", and a comma between cue and date. Low value; listed for parity.
+- **DOB cue words.** The port also takes "birth day(s)", a run of spaces in "born  on", and a
+  comma between cue and date. Low value; listed for parity. A comma is left out here on purpose:
+  "since birth, 3/20/2024" would claim a visit date.
 - **ZIP.** The port has an anchored ZIP recognizer (a case-sensitive state abbreviation, a ZIP or
   postal-code cue, or the ZIP+4 shape); this floor has none. Nothing suggested.
 - **A span outside the text.** This chain drops it and reports the detector's error; the port's

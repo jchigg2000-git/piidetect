@@ -57,5 +57,8 @@
   {"name": "trap_ssn_never_issued", "engines": ["regex"], "marked": "Template SSN «TRAP|000-00-0000», test value «TRAP|666-12-3456»."},
   {"name": "mrn_double_separator", "engines": ["regex"], "marked": "Merged charts «MRN|MRN--4481920» and «MRN|MRN:-5512093» on review."},
   {"name": "labels_unicode_spaces", "engines": ["regex"], "marked": "Pasted: «MRN|MRN:\u20094481920», «MRN|MRN\u3000#\u202f5512093», DOB:\u2007«DOB|1985-03-14», born\u202f«DOB|03/14/1985»."},
-  {"name": "trap_cc_consecutive_years", "engines": ["regex"], "marked": "Compare kept visits «TRAP|2023 2024 2025 2026»; top 10 «TRAP|2029 2030 2031 2032» kept visits."}
+  {"name": "trap_cc_consecutive_years", "engines": ["regex"], "marked": "Compare kept visits «TRAP|2023 2024 2025 2026»; top 10 «TRAP|2029 2030 2031 2032» kept visits."},
+  {"name": "dob_glued_to_cue", "engines": ["regex"], "marked": "Form fields DOB«DOB|03/14/1985», dob«DOB|1985-03-14», Birthdate«DOB|3/14/1985» came through unspaced."},
+  {"name": "dob_plural_cues", "engines": ["regex"], "marked": "Twins' DOBs: «DOB|3/14/2019»; parents' birthdates «DOB|1985-03-14»."},
+  {"name": "trap_date_glued_to_code", "engines": ["regex"], "marked": "Batch INV«TRAP|03/14/2024» and lot 7«TRAP|1/2/2024» posted overnight."}
 ]

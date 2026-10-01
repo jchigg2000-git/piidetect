@@ -32,6 +32,8 @@
 - **MRN:** a two-character separator (`MRN--4481920`, `MRN:-4481920`) was missed.
 - **MRN, DOB:** a Unicode space between label and value (U+2009, U+202F, U+3000, U+2007, as pasted
   from documents) was missed; only space, tab and U+00A0 counted.
+- **DOB:** a date glued to its birth cue (`DOB03/14/1985`, `dob1985-03-14`) was missed, and the
+  plural cues `DOBs`, `birthdates` and `birthdays` were not cues.
 
 ### Fewer false positives
 
