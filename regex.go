@@ -61,10 +61,19 @@ type recognizer struct {
 	trim func(text string, start, end int) (int, bool)
 	// find, when set, replaces re: the recognizer scans by hand.
 	find func(text string) [][]int
+	// findRE is the regex every find hit lies within a match of, if any; its
+	// required literals gate find the way re's gate a plain recognizer.
+	findRE *regexp.Regexp
+	// cues, when set, are the labels one of which must sit right before a
+	// hit (labelledBy), checked after validate.
+	cues []cue
+	// needs are literals the text must hold for the recognizer to match at
+	// all, derived from re and cues by withNeeds: scan skips it otherwise.
+	needs needs
 }
 
 func builtinRecognizers() []recognizer {
-	return []recognizer{
+	recs := []recognizer{
 		// Letters are Latin, Greek or Cyrillic with their combining marks, so
 		// müller@münchen.de is covered whole: RE2's \b is ASCII-only, and an
 		// ASCII class left "mü" in front of the placeholder. Scripts written
@@ -82,7 +91,7 @@ func builtinRecognizers() []recognizer {
 		// often an order or account number.
 		{typ: "SSN", confidence: 0.85,
 			re:       regexp.MustCompile(`\b\d{9}\b`),
-			validate: func(text string, start, end int) bool { return ssnValid(text, start, end) && ssnCue(text, start, end) }},
+			validate: ssnValid, cues: ssnCues},
 		// NANP. No \b on either side: nanpValid bounds the hit by non-digits
 		// instead, so "Tel415-555-0173" and "…0173x204" still count.
 		{typ: "PHONE", confidence: 0.85,
@@ -98,10 +107,8 @@ func builtinRecognizers() []recognizer {
 		// ("Phone: 4155550173", {"mobile":"4155550173"}), for the same reason
 		// as the unformatted SSN above.
 		{typ: "PHONE", confidence: 0.8,
-			re: regexp.MustCompile(`\b1?\d{10}\b`),
-			validate: func(text string, start, end int) bool {
-				return nanpValid(text, start, end) && phoneCue(text, start, end)
-			}},
+			re:       regexp.MustCompile(`\b1?\d{10}\b`),
+			validate: nanpValid, cues: phoneCues},
 		// E.164. A +1 number is NANP: exactly ten digits after the +1, passing
 		// nanpValid, so a signed counter (delta=+1500000000, +1727049600007)
 		// is not a phone.
@@ -151,7 +158,7 @@ func builtinRecognizers() []recognizer {
 		// leading \b so that snake_case keys (patient_mrn) count too.
 		// The value may carry a one- or two-letter prefix (E1234567) and
 		// internal hyphens (12-345-678); see findMRN.
-		{typ: "MRN", confidence: 0.85, find: findMRN,
+		{typ: "MRN", confidence: 0.85, find: findMRN, findRE: mrnRE,
 			validate: mrnLabelStart},
 		// MM/DD/YYYY anywhere, except where it is plainly not a birth date: a
 		// log timestamp or one end of a date range (see dobNotEvent).
@@ -176,8 +183,12 @@ func builtinRecognizers() []recognizer {
 				`|(?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?(?:\.? |-)(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*(?:\.?,? |-)(?:19|20)?\d{2}` +
 				`|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? (?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?,? (?:19|20)\d{2}` +
 				`)\b`),
-			validate: dobCue},
+			cues: dobCues},
 	}
+	for i := range recs {
+		recs[i] = recs[i].withNeeds()
+	}
+	return recs
 }
 
 // retinaAsset matches the tail of an image file name that has the shape of an
@@ -242,7 +253,7 @@ func (r *Regex) SetPatternPack(rules []PatternRule) error {
 		if err != nil {
 			return fmt.Errorf("pattern %s (%s): %w", rule.ID, rule.Type, err)
 		}
-		next = append(next, recognizer{typ: rule.Type, re: re, confidence: rule.confidence()})
+		next = append(next, recognizer{typ: rule.Type, re: re, confidence: rule.confidence()}.withNeeds())
 	}
 	r.compiled.Store(&next)
 	return nil
@@ -321,15 +332,31 @@ func pastEscape(text string, start int) int {
 
 // scan returns every validated hit of recs in text, unmerged. It stops before
 // the next recognizer once ctx is done; the caller checks ctx.Err().
+//
+// A recognizer whose needs text does not meet is skipped: it could not match.
+// The needs are checked against this same text, so on the normalized view a
+// cue that was fullwidth or percent-encoded as given (ＭＲＮ, ssn%3A) counts.
 func scan(ctx context.Context, recs []recognizer, text string) []Span {
 	var spans []Span
+	var lower string
 	for _, rec := range recs {
 		if ctx.Err() != nil {
 			break
 		}
+		if len(rec.needs) > 0 {
+			if lower == "" {
+				lower = asciiLower(text)
+			}
+			if !rec.needs.metBy(lower) {
+				continue
+			}
+		}
 		for _, loc := range rec.hits(text) {
 			start, end := loc[0], loc[1]
 			if rec.validate != nil && !rec.validate(text, start, end) {
+				continue
+			}
+			if rec.cues != nil && !labelledBy(text, start, rec.cues) {
 				continue
 			}
 			spans = append(spans, Span{
@@ -559,9 +586,7 @@ var phoneCues = []cue{
 	{"contact number", cueWordOrHump}, {"contactnumber", cueWordOrHump},
 }
 
-func dobCue(text string, start, _ int) bool   { return labelledBy(text, start, dobCues) }
-func ssnCue(text string, start, _ int) bool   { return labelledBy(text, start, ssnCues) }
-func phoneCue(text string, start, _ int) bool { return labelledBy(text, start, phoneCues) }
+func dobCue(text string, start, _ int) bool { return labelledBy(text, start, dobCues) }
 
 // A clock time right after a date ("10/22/2026 14:30:17", ISO's "T").
 var clockAfter = regexp.MustCompile(`^[ T]\d{1,2}:\d{2}`)

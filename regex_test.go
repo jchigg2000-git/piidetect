@@ -2,6 +2,8 @@ package piidetect
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -182,6 +184,50 @@ func TestLabelledDOBAndMRNShapes(t *testing.T) {
 	} {
 		if got, _ := New().Redact(context.Background(), c.in); got != c.want {
 			t.Errorf("Redact(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// A recognizer is skipped when the text lacks its required literal (PERF-1),
+// and that check runs on the normalized view too: a cue or "@" that is only
+// fullwidth, percent-encoded or escaped as given must still let it fire. Over
+// the corpus, as given and normalized, skipping must change nothing.
+func TestSkippedRecognizersStillReadEncodedCues(t *testing.T) {
+	cases := []struct{ text, typ, value string }{
+		{"ＭＲＮ：４４８１９２０", "MRN", "ＭＲＮ：４４８１９２０"},
+		{"q=ssn%3A078051120", "SSN", "078051120"},
+		{`{"note":"Phone:\u00204155550173"}`, "PHONE", "4155550173"},
+		{"d=b%69rth%3A%201985-03-14", "DOB", "1985-03-14"},
+		{"to=jane.doe%40example.org", "EMAIL", "jane.doe%40example.org"},
+		{"jane.doe＠example.org", "EMAIL", "jane.doe＠example.org"},
+	}
+	for _, c := range cases {
+		spans, err := NewRegex().Detect(context.Background(), c.text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := strings.Index(c.text, c.value)
+		if !slices.ContainsFunc(spans, func(s Span) bool {
+			return s.Type == c.typ && s.Start <= want && s.End >= want+len(c.value)
+		}) {
+			t.Errorf("%q: want %s over %q, got %+v", c.text, c.typ, c.value, spans)
+		}
+	}
+
+	ungated := slices.Clone(builtins)
+	for i := range ungated {
+		ungated[i].needs = nil
+	}
+	for _, e := range loadCorpus(t) {
+		texts := []string{e.Text}
+		if dec, _, ok := normalizedView(e.Text); ok {
+			texts = append(texts, dec)
+		}
+		for _, text := range texts {
+			got, want := scan(context.Background(), builtins, text), scan(context.Background(), ungated, text)
+			if !slices.Equal(got, want) {
+				t.Errorf("%s: skipping changed the hits on %q:\n got %+v\nwant %+v", e.Name, text, got, want)
+			}
 		}
 	}
 }

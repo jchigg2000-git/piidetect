@@ -164,6 +164,13 @@
   (`git@github.com:org/repo.git`), whose `:` is followed, with no space, by a path holding a `/` or
   ending `.git`. An address that ends a clause (`email jane@example.org: call her`) still counts.
 
+### Faster
+
+- **Regex:** a recognizer is skipped on text that cannot hold its match — no `@` for EMAIL, no cue
+  word for an unlabelled-shape SSN, PHONE or DOB, no label for MRN — with the literals derived from
+  the regexes and cue tables and checked on the normalized text too; clean text reads about 3x
+  faster (1 MB prose 355→105 ms) and `bench_test.go` tracks it.
+
 ## v0.1.1 — 2026-09-23
 
 Values written the way people actually type or print them were silently left unredacted. This
