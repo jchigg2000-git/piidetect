@@ -2,7 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- **Presidio:** `Language` (default `"en"`, sent with each request and declared by the pack's
+  recognizers), `HTTPClient` (default `http.DefaultClient`) and `MaxChars` (default
+  `DefaultPresidioMaxChars`, 1,000,000, spaCy's `max_length`) fields. Text over `MaxChars` is not
+  sent; `Detect` returns an error, so the caller fails closed instead of meeting a sidecar 500.
+- **Examples:** runnable godoc examples for the quickstart (`Chain.Redact`), `Mask`,
+  `Regex.SetPatternPack` and an allow list via `Chain.SetPatternPack`. Each is a test.
+
 ### Fixed
+
+- **Presidio:** a URL with a trailing slash posted to `//analyze` and failed. The slash is now
+  dropped. A non-200 reply was reported as a bare status with its body unread; the error now quotes
+  up to 512 bytes of it, and the rest is drained so the connection can be reused.
+- **Presidio:** `PresidioEntityMap` was read on every `Detect`, a data race with a caller editing it.
+  `NewPresidio` now copies it; a later edit reaches only the instances built after it.
 
 - **Chain:** a `Chain{}` with no detectors returned the text in the clear with no error:
   `(&Chain{}).Redact(ctx, "ssn 078-05-1120")` gave back the SSN. It now runs the built-in regex

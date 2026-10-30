@@ -13,6 +13,10 @@ const PresidioDefaultScoreGate = 0.4
 // PresidioEntityMap normalizes Presidio entity types onto this package's
 // vocabulary. Types mapping to "" are dropped: DATE_TIME in particular is
 // false-positive noise against semver strings and order numbers.
+//
+// NewPresidio (and so WithPresidio) copies this map, so edits must come before
+// construction: a running Presidio never reads the global, and a later edit
+// reaches only the instances built after it.
 var PresidioEntityMap = map[string]string{
 	"PERSON":          "PERSON_NAME",
 	"LOCATION":        "ADDRESS",

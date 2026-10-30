@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -108,5 +110,53 @@ func TestPresidioLiveNamesAndAddresses(t *testing.T) {
 				t.Errorf("%s: presidio missed %s %q (got %+v)", e.Name, truth.Type, e.Text[truth.Start:truth.End], spans)
 			}
 		}
+	}
+}
+
+// A trailing-slash URL used to POST to //analyze; a 500 came back as a bare
+// status with its body unread; text past spaCy's max_length was sent anyway.
+func TestPresidioClientEdges(t *testing.T) {
+	var hits atomic.Int32
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if r.URL.Path != "/analyze" {
+			http.NotFound(w, r)
+			return
+		}
+		var req map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req["language"] != "de" {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"error": "No matching recognizers were found to serve the request."}`+strings.Repeat(" pad", 300))
+			return
+		}
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	defer stub.Close()
+
+	p := NewPresidio(stub.URL + "/")
+	p.HTTPClient = stub.Client()
+	if _, err := p.Detect(context.Background(), "text"); err == nil ||
+		!strings.Contains(err.Error(), "500") || !strings.Contains(err.Error(), "No matching recognizers") {
+		t.Errorf("500 error = %v; want the status and the sidecar's message", err)
+	} else if len(err.Error()) > 600 {
+		t.Errorf("500 error quotes %d bytes; want at most ~512 of the body", len(err.Error()))
+	}
+
+	p.Language = "de"
+	if _, err := p.Detect(context.Background(), "text"); err != nil {
+		t.Errorf("trailing-slash URL with Language de: %v", err)
+	}
+
+	p.MaxChars = 5
+	before := hits.Load()
+	if _, err := p.Detect(context.Background(), "héllo!"); err == nil {
+		t.Error("6 characters over MaxChars 5: want an error")
+	}
+	if _, err := p.Detect(context.Background(), "héllo"); err != nil {
+		t.Errorf("5 characters (6 bytes) at MaxChars 5: %v", err)
+	}
+	if got := hits.Load() - before; got != 1 {
+		t.Errorf("sidecar saw %d requests; want 1 (the overlong text is not sent)", got)
 	}
 }

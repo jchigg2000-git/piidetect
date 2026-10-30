@@ -96,6 +96,20 @@ The regex floor still runs first and still runs if the sidecar is down — a dea
 regex-only and reports the error alongside the spans it did find. It never fails open and silently
 returns your text unredacted.
 
+To configure the client, build the chain yourself. Each field's zero value is the default:
+
+```go
+p := piidetect.NewPresidio("http://localhost:5002")
+p.Language = "de"            // default "en"; the sidecar needs a model for it
+p.HTTPClient = myClient      // default http.DefaultClient
+p.MaxChars = 200_000         // default 1,000,000 (spaCy's max_length); negative for no limit
+c := &piidetect.Chain{Detectors: []piidetect.Detector{piidetect.NewRegex(), p}}
+```
+
+Text over `MaxChars` is not sent: the sidecar would fail it anyway, so `Detect` reports an error
+without the round trip and your fail-closed path takes over. A non-200 reply is reported with the start of its body
+(the sidecar's own message), so a missing language model reads as one rather than as a bare `500`.
+
 ## Errors mean fail closed
 
 `Run` and `Redact` return every span they found, but an error means one may have been missed: a
@@ -111,6 +125,8 @@ error, never the SSN. A zero `Regex` reads with the built-ins; a zero `Presidio`
 
 Presidio entity types are normalized onto this package's vocabulary via `PresidioEntityMap`, and its
 results are gated at `PresidioDefaultScoreGate` (0.4) unless a threshold rule lowers it per type.
+`NewPresidio` copies the map, so edit it before constructing: a later edit reaches only the
+instances built after it.
 
 ## Extending it at runtime
 

@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"strings"
 	"sync/atomic"
+	"unicode/utf8"
 )
 
 // Presidio calls a self-hosted presidio-analyzer sidecar over HTTP — the
@@ -19,38 +22,75 @@ import (
 // retunes Presidio without a container restart.
 //
 // The entity-type map and default score gate live in vocabulary.go
-// (PresidioEntityMap, PresidioDefaultScoreGate).
+// (PresidioEntityMap, PresidioDefaultScoreGate). NewPresidio copies the map,
+// so edit PresidioEntityMap before constructing: a later edit reaches only
+// the instances built after it.
+//
+// The exported fields are optional settings in the manner of Chain's, each
+// with a zero value that means the default. Set them before the first Detect.
 type Presidio struct {
-	url  string
-	http *http.Client
-	pack atomic.Pointer[compiledPack]
+	// Language is the analyzer language sent with each request and declared
+	// by the pack's ad-hoc recognizers; "" means "en". The sidecar must have
+	// an NLP model loaded for it.
+	Language string
+	// HTTPClient sends the requests; nil means http.DefaultClient. Set one
+	// for TLS, a proxy or a transport-level timeout.
+	HTTPClient *http.Client
+	// MaxChars is the longest text, in characters, sent to the sidecar; zero
+	// means DefaultPresidioMaxChars and a negative value means no limit.
+	// Longer text is not sent: Detect returns an error, so the caller's
+	// fail-closed path applies rather than a sidecar 500.
+	MaxChars int
+
+	url      string
+	entities map[string]string // PresidioEntityMap as of construction
+	pack     atomic.Pointer[compiledPack]
 }
 
+// DefaultPresidioMaxChars is Presidio.MaxChars when unset: spaCy's default
+// max_length, beyond which the analyzer fails the request.
+const DefaultPresidioMaxChars = 1_000_000
+
 // compiledPack is a pattern pack partitioned by kind, precomputed once per
-// reload instead of per request.
+// reload (and per language) instead of per request.
 type compiledPack struct {
+	rules []PatternRule      // as given, to recompile for another language
+	lang  string             // the supported_language adhoc declares
 	adhoc []map[string]any   // pattern + deny-list recognizers, payload-ready
 	gates map[string]float64 // per-type score gate overrides
 	types map[string]bool    // entity types our pack rules declare
 }
 
+// NewPresidio returns a Presidio for the sidecar at url
+// (e.g. "http://localhost:5002"); a trailing slash is ignored.
 func NewPresidio(url string) *Presidio {
-	p := &Presidio{url: url, http: &http.Client{}}
+	p := &Presidio{url: strings.TrimRight(url, "/"), entities: maps.Clone(PresidioEntityMap)}
 	p.pack.Store(&compiledPack{})
 	return p
 }
 
 func (p *Presidio) Name() string { return "presidio" }
 
+func (p *Presidio) language() string {
+	if p.Language == "" {
+		return "en"
+	}
+	return p.Language
+}
+
 func (p *Presidio) SetPatternPack(rules []PatternRule) {
-	c := &compiledPack{gates: map[string]float64{}, types: map[string]bool{}}
+	p.pack.Store(compilePack(rules, p.language()))
+}
+
+func compilePack(rules []PatternRule, lang string) *compiledPack {
+	c := &compiledPack{rules: rules, lang: lang, gates: map[string]float64{}, types: map[string]bool{}}
 	for _, r := range rules {
 		c.types[r.Type] = true
 		switch {
 		case r.isRegex():
 			rec := map[string]any{
 				"name":               "pack-" + r.ID,
-				"supported_language": "en",
+				"supported_language": lang,
 				"supported_entity":   r.Type,
 				"patterns": []map[string]any{
 					{"name": r.ID, "regex": r.Regex, "score": r.confidence()},
@@ -63,7 +103,7 @@ func (p *Presidio) SetPatternPack(rules []PatternRule) {
 		case r.Kind == "deny_list" && len(r.DenyList) > 0:
 			c.adhoc = append(c.adhoc, map[string]any{
 				"name":               "pack-" + r.ID,
-				"supported_language": "en",
+				"supported_language": lang,
 				"supported_entity":   r.Type,
 				"deny_list":          r.DenyList,
 			})
@@ -73,7 +113,7 @@ func (p *Presidio) SetPatternPack(rules []PatternRule) {
 			}
 		}
 	}
-	p.pack.Store(c)
+	return c
 }
 
 type presidioResult struct {
@@ -84,15 +124,39 @@ type presidioResult struct {
 }
 
 // Detect asks the sidecar for spans. A zero Presidio carries no pack and uses
-// http.DefaultClient; with no URL its requests fail and say so.
+// http.DefaultClient; with no URL its requests fail and say so. Text longer
+// than MaxChars is not sent, and a non-200 reply is reported with the start of
+// its body.
 func (p *Presidio) Detect(ctx context.Context, text string) ([]Span, error) {
+	limit := p.MaxChars
+	if limit == 0 {
+		limit = DefaultPresidioMaxChars
+	}
+	if limit > 0 && len(text) > limit {
+		if n := utf8.RuneCountInString(text); n > limit {
+			return nil, fmt.Errorf("presidio: text is %d characters, over MaxChars %d; not sent", n, limit)
+		}
+	}
+	lang := p.language()
 	pack := p.pack.Load()
 	if pack == nil {
 		pack = &compiledPack{}
 	}
-	client := p.http
+	if pack.lang != lang && len(pack.rules) > 0 {
+		// Language was set after SetPatternPack: the recognizers must declare
+		// the request's language or the analyzer skips them. Keep the result
+		// unless a reload got in first.
+		next := compilePack(pack.rules, lang)
+		p.pack.CompareAndSwap(pack, next)
+		pack = next
+	}
+	client := p.HTTPClient
 	if client == nil {
 		client = http.DefaultClient
+	}
+	entities := p.entities
+	if entities == nil {
+		entities = PresidioEntityMap // zero Presidio: no URL, so its request fails first
 	}
 
 	// The request-level threshold must sit at the lowest gate so a lowered
@@ -106,7 +170,7 @@ func (p *Presidio) Detect(ctx context.Context, text string) ([]Span, error) {
 	}
 	payload := map[string]any{
 		"text":            text,
-		"language":        "en",
+		"language":        lang,
 		"score_threshold": reqThreshold,
 	}
 	if len(pack.adhoc) > 0 {
@@ -127,7 +191,12 @@ func (p *Presidio) Detect(ctx context.Context, text string) ([]Span, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("presidio analyze returned %d", resp.StatusCode)
+		// Quote the start of the sidecar's own message (a missing language
+		// model, spaCy's E088 for overlong text) and drain a bounded rest so
+		// the connection can be reused.
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		return nil, fmt.Errorf("presidio analyze returned %d: %q", resp.StatusCode, bytes.TrimSpace(msg))
 	}
 	var results []presidioResult
 	// Bound the sidecar read (runs inline per proxied request); normal analyze responses are small.
@@ -139,7 +208,7 @@ func (p *Presidio) Detect(ctx context.Context, text string) ([]Span, error) {
 	runeToByte := RuneToByteOffsets(text)
 	var spans []Span
 	for _, r := range results {
-		typ, mapped := PresidioEntityMap[r.EntityType]
+		typ, mapped := entities[r.EntityType]
 		if !mapped {
 			// Only OUR pack's ad-hoc types come back verbatim. An unmapped
 			// Presidio built-in (US_ITIN fired first) would bypass the
