@@ -99,10 +99,11 @@ returns your text unredacted.
 ## Errors mean fail closed
 
 `Run` and `Redact` return every span they found, but an error means one may have been missed: a
-sidecar was down, a detector timed out (the floor stops between recognizers once the context is
-done, so a cancelled request or several megabytes against `DefaultTimeout` comes back partly read),
-or the chain was misconfigured. Where a leak matters, treat any error as failure — drop the text or
-mask all of it — rather than send on the partial result. Raise `Chain.Timeout` for very large input.
+sidecar was down, a detector timed out, the caller's context ended (the floor stops between
+recognizers once it is done, so a cancelled request comes back partly read), or the chain was
+misconfigured. Where a leak matters, treat any error as failure — drop the text or mask all of it —
+rather than send on the partial result. `Chain.Timeout` bounds the other detectors, not the regex
+floor: several megabytes are read to the end however long that takes.
 
 Zero values are safe: a `Chain{}` with no detectors runs the built-in floor in their place and
 reports `ErrNoDetectors`, so `(&Chain{}).Redact(ctx, "ssn 078-05-1120")` gives `ssn [SSN]` and the

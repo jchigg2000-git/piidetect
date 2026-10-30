@@ -13,9 +13,8 @@
 - **Regex:** the floor ignored its context: 4 MB with an already-cancelled context ran 2.5 s and
   returned no error. It now stops between recognizers and between the as-given and normalized
   reads, returning the spans found so far with the context's error, and the chain masks those spans
-  as well as reporting it. Callers should fail closed on any error. The floor now also honours
-  `DefaultTimeout`, which several megabytes of text can exceed (4 MB took 4.7 s on an Apple M5); set
-  `Chain.Timeout` higher for input that large.
+  as well as reporting it. Callers should fail closed on any error. `Chain.Timeout` does not apply
+  to the floor: it bounds the other detectors, and a large text is still read to the end.
 - **Allow list:** `support+billing@example.com` allow-listed for `EMAIL` came out as
   `support+[EMAIL]`, because the `+`-as-space reading claimed `billing@example.com`, which is not
   the allowed string. A claim of the same type wholly inside an allowed span is now dropped with it;

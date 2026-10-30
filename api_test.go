@@ -104,3 +104,14 @@ func TestRegexFloorHonoursCancellation(t *testing.T) {
 		t.Errorf("errs = %v, want the cancellation reported", errs)
 	}
 }
+
+// The chain's per-detector Timeout is for a sidecar; the in-process floor must
+// not come back partly read because of it, or a large text leaks its tail.
+func TestChainTimeoutDoesNotCutTheFloor(t *testing.T) {
+	text := strings.Repeat("nothing to see here. ", 2000) + "ssn 219-09-9999"
+	c := &Chain{Detectors: []Detector{NewRegex()}, Timeout: time.Nanosecond}
+	got, errs := c.Redact(context.Background(), text)
+	if len(errs) != 0 || !strings.HasSuffix(got, "ssn [SSN]") {
+		t.Fatalf("Redact with a 1ns Timeout: errs %v, tail %q", errs, got[len(got)-20:])
+	}
+}

@@ -51,7 +51,9 @@ type Detector interface {
 // reports ErrNoDetectors, so a zero Chain never returns text unredacted.
 type Chain struct {
 	Detectors []Detector
-	// Timeout bounds each detector on a Run; zero means DefaultTimeout.
+	// Timeout bounds each detector on a Run, other than the built-in regex
+	// floor, which runs to the end unless ctx itself is done; zero means
+	// DefaultTimeout.
 	Timeout time.Duration
 	// allow holds map[type]set(lowercased term) from the pattern pack's
 	// allow_list rules. Swapped atomically so a hot-reload never tears.
@@ -156,15 +158,17 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 		errs = append(errs, ErrNoDetectors)
 	}
 	for _, d := range detectors {
-		dctx, cancel := context.WithTimeout(ctx, timeout)
 		var spans []Span
 		var err error
 		if rd, ok := d.(rawDetector); ok {
-			spans, err = rd.detectRaw(dctx, text)
+			// The in-process floor is linear time and is what must not come back
+			// partly read; only the caller's own context stops it.
+			spans, err = rd.detectRaw(ctx, text)
 		} else {
+			dctx, cancel := context.WithTimeout(ctx, timeout)
 			spans, err = d.Detect(dctx, text)
+			cancel()
 		}
-		cancel()
 		if err != nil {
 			// Keep what it found before failing: masking more is the safe side.
 			errs = append(errs, fmt.Errorf("%s: %w", d.Name(), err))

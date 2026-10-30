@@ -35,28 +35,32 @@ against a temp copy at `8b02d83`; the input quoted on an item is the reproductio
 
 > ### ▶ RESUME HERE — session handoff 2026-10-30
 >
-> **State:** `main` at `8b02d83`, clean, `go test ./...` green. Public repo; tags `v0.1.0`, `v0.1.1`.
-> Ten commits of fixes sit in CHANGELOG Unreleased, API unchanged since `v0.1.1` (`go doc` diff, survey).
+> **State:** `main` clean, `go test ./... -race` green; round 1 shipped (below). Public repo; tags
+> `v0.1.0`, `v0.1.1` — nothing tagged this session.
 >
-> **▶ NEXT ACTION: round 1 — ENC-1, ENC-2, FP-1, API-1, MEAS-1 in parallel worktrees.**
+> **▶ NEXT ACTION: round 2 — REC-1+REC-2, REC-3+REC-4, ENC-3+ENC-4, PERF-1, API-2+API-3 in parallel worktrees; MEAS-2 inline.**
 >
 > #### What shipped
-> Nothing yet this session; roadmap seeded from the survey.
+> Round 1: MEAS-1 per-type corpus scorer + IBAN/IPv4 traps + `Redact` end-to-end check; ENC-2
+> zero-width/soft-hyphen dropped, every script's digits, `﹫`, `ー`; ENC-1 JSON string escapes;
+> FP-1 UA versions, log-timestamp/range dates, `+1` counters, code emails; API-1 `ErrNoDetectors`,
+> safe zero values, ctx checks in the floor, allow-listed plus-addresses. Foreman follow-up: the
+> chain's `Timeout` no longer cuts the regex floor (API-1 made a 4 MB text come back partly read
+> under `DefaultTimeout`; `TestChainTimeoutDoesNotCutTheFloor`).
 >
 > #### What I found by reading that nobody reported
-> JSON string escapes (`\n`, `\uXXXX`, `\/`) were found independently by two reviewers (recall,
-> encodings): a value after a literal `\n` in a logged JSON body has no word boundary, so the
-> floor misses it and partial matches eat the escape letter (`Email:\[EMAIL]`, invalid JSON).
+> ENC-1 trade-off: in a Windows path `C:\temp\nancy@example.org` the `\n` reads as an escape, so
+> `ancy@example.org` is masked and the `n` stays. Documented in README; kept because the
+> alternative (`"Email:\[EMAIL]"`) breaks every logged JSON body.
 >
 > #### What I deliberately did NOT do, and why
-> Tagged nothing — owner rule this session: *"Ask me before anything public beyond pushing main,
-> such as releases, tags or publishing."* Breaking API changes (API-6, API-7b) wait for an
-> owner call on v0.2.
+> Tagged nothing and skipped FP-2/FP-4/FP-6 and API-6/API-7b: the four owner questions below went
+> unanswered (asked 2026-10-30, no reply in 5 min), and each is public or trades recall.
 >
 > #### Questions — each one line from you
-> - Tag `v0.1.2` now from Unreleased? (REL-1)
-> - FP-2/FP-4: require a label for space-only SSN/phone shapes, losing unlabelled `call me at 415 555 0173`?
-> - FP-6: tighten card issuer prefixes, losing 7xxx fleet and non-Troy 9xxx cards?
+> - Tag `v0.1.2` now from Unreleased? (REL-1; my pick: after round 1, i.e. now)
+> - FP-2/FP-4: require a label for space-only SSN/phone shapes, adding `call`/`text` cues? (my pick: yes)
+> - FP-6: tighten card issuer prefixes, losing 7xxx fleet and non-Troy 9xxx cards? (my pick: yes)
 > - Open v0.2 for breaking API changes (API-6 error shape, API-7b `SetPatternPack` error, renames)?
 
 ---
@@ -67,38 +71,16 @@ The decode pass (`decode.go`) reads text twice — as given and normalized — a
 Every stage added here must compose into `orig` the way `percentDecoded` does, and text with none
 of the triggers is still read once.
 
-- ⬜ **ENC-1** JSON string escapes — `\n \r \t \/ \" \\` and `\uXXXX` (incl. surrogate pairs) decoded
-  as a `normalizedView` stage (`decode.go:30`); a raw span starting on an escape's letter is moved
-  forward in `detectRaw`. Repro: `{"note":"x\n219-09-9999"}` unchanged; `"Email:\njane.doe@example.org"`
-  → `"Email:\[EMAIL]"` (invalid JSON); `{"ssn":"219–09–9999"}` and PHP `03\/14\/1985` missed;
-  a doubly-encoded body `{"body":"{\"ssn\":\"078051120\"}"}` misses ssn/phone/dob/mrn.
-- ⬜ **ENC-2** Fold more in `fold` (`decode.go:80`): drop U+00AD, U+200B–200D, U+2060, U+FEFF;
-  map any `unicode.Nd` digit to ASCII; U+FE6B → `@`; U+30FC and U+2043 → `-` between digits only.
-  Repro: `jane.​doe@example.org` → `jane.​[EMAIL]` (partial mask); `SSN ٢١٩-٠٩-٩٩٩٩` missed.
-  Em dash and U+2015 stay unfolded (README rationale). Update README "does not do".
 - ⬜ **ENC-3** HTML entities — numeric (`&#64;`, `&#x40;`) and a small named set (`nbsp ndash minus
   hyphen commat lt gt amp quot`), gated on `&#` or `&`+known name. Repro: `jane&#64;example.org`,
   `4111&nbsp;1111&nbsp;1111&nbsp;1111` missed.
 - ⬜ **ENC-4** Double percent-encoding — repeat `percentDecoded` up to 3 rounds while escapes remain.
   Repro: `?email=jane.doe%2540example.org` unchanged. Only risk: a literal `%25XX`.
-- ⬜ **ENC-5** Document base64, quoted-printable (`jane.doe=40example.org`) and line-wrapped values in
-  README "What it does not do" — closing them costs precision (base64 masks only whole tokens).
-
 ## §2 Precision (FP)
 
-Each fix only removes claims; the precision reviewer sketched FP-1…FP-5 together and the corpus
-stayed green (every value caught, 0 traps). Each ships with its trap entry in `seed.json`.
+Each fix only removes claims; the precision reviewer sketched FP-2…FP-4 together with the shipped
+FP-1 and the corpus stayed green (every value caught, 0 traps). Each ships with its trap entry in `seed.json`.
 
-- ⬜ **FP-1** Safe set, no recall cost:
-  - Chrome UA version as IP — `Chrome/120.0.0.0` → `[IP]` on nearly every request log. Reject an
-    IPv4 that directly follows a `Name/` token starting at space/`(`/BOT; URL paths still count
-    (`validIP`, `regex.go:555`). Trap `trap_ua_product_version`.
-  - Uncued `MM/DD/YYYY` followed by a clock time, or an end of a range (`-`, `to`, `and`, `through`,
-    `until`) — `10/22/2026 14:30:17 INFO`, `between 01/01/2026 and 06/30/2026` (`regex.go:150`).
-    Trap `trap_dob_log_timestamp`. `Invoice date 03/14/2024` remains claimed (only a label rule fixes that).
-  - `+1` E.164 must be exactly 11 digits passing `nanpValid` (`regex.go:106`) — `delta=+1500000000`,
-    `+1727049600007` → `[PHONE]` today.
-  - Email in code — reject a match followed by `(` (`A@np.linalg.inv(B)`) and `git@host:` SSH remotes.
 - ⬜ **FP-3** Card layout — `\b\d(?:[- ]?\d){12,18}` (`regex.go:115`) claims `ids 42 17 88 93 12 55 61`;
   replace with `(\d{4}[- ]){3}\d{4}([- ]\d{3})?`. Changes `TestGuardsJudgeClaimsBeforeMerging`'s
   expected output (`Wire [IBAN] 106 EUR`); give it a new input that still exercises guard-before-merge.
@@ -132,13 +114,6 @@ Label-cued only; none of these widens an unlabelled shape.
 
 ## §4 Robustness & API (API)
 
-- ⬜ **API-1** Fail closed on zero values and cancellation:
-  - `(&Chain{}).Redact(ctx, "ssn 078-05-1120")` returns the SSN in the clear, no error → `ErrNoDetectors`.
-  - `var r Regex; r.Detect(…)` panics → nil `compiled` falls back to built-ins; `Presidio{}` nil client.
-  - `detectRaw` ignores ctx (`regex.go:230`): 4 MB with a cancelled ctx ran 2.5 s, no error → check
-    `ctx.Err()` between recognizers and passes, return spans so far + error.
-  - Allow-listed `support+billing@example.com` → `support+[EMAIL]` (the `+` view span is a different
-    string, `piidetect.go:163`) → drop a span inside an allowed span of the same type.
 - ⬜ **API-2** Runnable godoc Examples — `ExampleChain_Redact` (quickstart), `ExampleMask`,
   `ExampleRegex_SetPatternPack`, allow-list. None exist.
 - ⬜ **API-3** Presidio client, non-breaking part — trailing-slash URL gives `//analyze`
@@ -173,14 +148,6 @@ Profile is almost all `regexp`; clean and dirty input cost the same.
 
 Corpus at `8b02d83`: 81 entries, 113 floor values, 3 Presidio-only, 49 traps; coverage 94.9%.
 
-- ⬜ **MEAS-1** Scorer and traps:
-  - Per-type table (found / missed / FP / traps fired) in `go test -v -run Corpus`; a wrong-type
-    overlap counts as FP (today it is a hit, `regex_test.go:57`); the 0.95/0.97 floors
-    (`regex_test.go:69-75`) can never fail — remove or make them real.
-  - IBAN has 0 traps: add bad checksum `DE89370400440532013001`, short, extra trailing digit, hex digest.
-    IPv4: `10.0.256.1` (README's own example, untested), `192.168.01.1`, HL7 OID `2.16.840.1.113883.19.5`.
-  - Scoring rules written as a header comment in `corpus_test.go` so the port can match them.
-  - One end-to-end check that no marked value survives `New().Redact` (corpus runs `NewRegex().Detect` only).
 - ⬜ **MEAS-2** CI — pinned `staticcheck` via `go run` (clean today, no go.mod change); Go matrix
   `['1.22','stable']`; enforce the README's "over 90%" coverage or drop the number (README:160).
   govulncheck only non-blocking on stable (14 stdlib findings, toolchain-owned).
