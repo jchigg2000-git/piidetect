@@ -35,27 +35,32 @@ against a temp copy at `8b02d83`; the input quoted on an item is the reproductio
 
 > ### ▶ RESUME HERE — session handoff 2026-10-30
 >
-> **State:** `main` clean, `go test ./... -race` green; round 1 shipped (below). Public repo; tags
-> `v0.1.0`, `v0.1.1` — nothing tagged this session.
+> **State:** `main` clean, `go test ./... -race` green; rounds 1–2 shipped (below). Public repo;
+> tags `v0.1.0`, `v0.1.1` — nothing tagged this session.
 >
-> **▶ NEXT ACTION: round 2 — REC-1+REC-2, REC-3+REC-4, ENC-3+ENC-4, PERF-1, API-2+API-3 in parallel worktrees; MEAS-2 inline.**
+> **▶ NEXT ACTION: round 3 — FP-3, MEAS-3, API-4 (split a/b), PERF-2 in parallel worktrees; REL-2 + MEAS-4 inline.**
 >
 > #### What shipped
-> Round 1: MEAS-1 per-type corpus scorer + IBAN/IPv4 traps + `Redact` end-to-end check; ENC-2
-> zero-width/soft-hyphen dropped, every script's digits, `﹫`, `ー`; ENC-1 JSON string escapes;
-> FP-1 UA versions, log-timestamp/range dates, `+1` counters, code emails; API-1 `ErrNoDetectors`,
-> safe zero values, ctx checks in the floor, allow-listed plus-addresses. Foreman follow-up: the
-> chain's `Timeout` no longer cuts the regex floor (API-1 made a 4 MB text come back partly read
-> under `DefaultTimeout`; `TestChainTimeoutDoesNotCutTheFloor`).
+> Round 1 (`7dd64f8`…`4fa7ceb`): MEAS-1 per-type scorer + IBAN/IPv4 traps + `Redact` end-to-end;
+> ENC-2 invisibles and every script's digits; ENC-1 JSON string escapes; FP-1 UA versions,
+> log-timestamp dates, `+1` counters, code emails; API-1 fail closed on zero values/cancellation;
+> `Chain.Timeout` no longer cuts the floor. Round 2 (`2abc80a`…`22c38af`): MEAS-2 CI matrix,
+> staticcheck, coverage floor; API-2 Examples; API-3 Presidio `Language`/`HTTPClient`/`MaxChars`,
+> trailing slash, per-instance entity map; REC-1/2 `is`/`was` and missing labels; REC-3/4 DOB
+> timestamps/compact, prefixed/hyphenated MRNs; ENC-3/4 HTML references and double
+> percent-encoding; PERF-1 literal skip (geomean −54%). Foreman follow-ups: a quoted Presidio
+> error body is masked by the floor before it reaches the error (`df6daac`); the MRN finder is
+> gated on its regex's literals (`22c38af`).
 >
 > #### What I found by reading that nobody reported
-> ENC-1 trade-off: in a Windows path `C:\temp\nancy@example.org` the `\n` reads as an escape, so
-> `ancy@example.org` is masked and the `n` stays. Documented in README; kept because the
-> alternative (`"Email:\[EMAIL]"`) breaks every logged JSON body.
+> API-3 quoted the sidecar's error body raw; callers log errors, so an echoing sidecar would have
+> put PII in logs. Fixed as above. PERF-1 left the MRN recognizer ungated after REC-4 moved it to a
+> hand-written finder; recall was unaffected, speed was.
 >
 > #### What I deliberately did NOT do, and why
-> Tagged nothing and skipped FP-2/FP-4/FP-6 and API-6/API-7b: the four owner questions below went
-> unanswered (asked 2026-10-30, no reply in 5 min), and each is public or trades recall.
+> Tagged nothing and skipped FP-2/FP-4/FP-6, REC-5 and API-6/API-7b: the owner questions below
+> went unanswered (asked 2026-10-30, no reply in 5 min), and each is public, trades recall, or
+> breaks the API.
 >
 > #### Questions — each one line from you
 > - Tag `v0.1.2` now from Unreleased? (REL-1; my pick: after round 1, i.e. now)
@@ -69,13 +74,12 @@ against a temp copy at `8b02d83`; the input quoted on an item is the reproductio
 
 The decode pass (`decode.go`) reads text twice — as given and normalized — and maps spans back.
 Every stage added here must compose into `orig` the way `percentDecoded` does, and text with none
-of the triggers is still read once.
+of the triggers is still read once. Stages today: JSON escapes → HTML references → percent (≤3
+rounds) → fold.
 
-- ⬜ **ENC-3** HTML entities — numeric (`&#64;`, `&#x40;`) and a small named set (`nbsp ndash minus
-  hyphen commat lt gt amp quot`), gated on `&#` or `&`+known name. Repro: `jane&#64;example.org`,
-  `4111&nbsp;1111&nbsp;1111&nbsp;1111` missed.
-- ⬜ **ENC-4** Double percent-encoding — repeat `percentDecoded` up to 3 rounds while escapes remain.
-  Repro: `?email=jane.doe%2540example.org` unchanged. Only risk: a literal `%25XX`.
+No open items. Known edge kept on purpose: a Windows path `C:\temp\nancy@…` masks `ancy@…`
+(the `\n` reads as an escape); see README.
+
 ## §2 Precision (FP)
 
 Each fix only removes claims; the precision reviewer sketched FP-2…FP-4 together with the shipped
@@ -98,28 +102,11 @@ FP-1 and the corpus stayed green (every value caught, 0 traps). Each ships with 
 
 Label-cued only; none of these widens an unlabelled shape.
 
-- ⬜ **REC-1** `is`/`was` between label and value — `My SSN is 078051120`, `MRN is 4481920`,
-  `her date of birth is 1985-03-14` missed. `labelledBy` (`regex.go:439`) strips one trailing
-  ` is`/` was`; MRN regex (`regex.go:147`) takes the same optional word. `trap_order_bare9` must hold.
-- ⬜ **REC-2** Missing labels — `patientDob`/`memberDOB` (make `dob` `cueWordOrHump`, `regex.go:401`),
-  `SS#:`, `Soc Sec #:`, `ssnNumber`, `ssn_number`, `Ph:`, `cellphone`, `mobileNo`, `contactNumber`,
-  `MR#: 4481920` (`#` required so the title "Mr" can't match).
-- ⬜ **REC-3** DOB as timestamp or compact — `{"dob":"1985-03-14T00:00:00Z"}` (Go's `time.Time`
-  marshalling) missed; `DOB: 1985-03-14 00:00:00` leaves the time; `{"dob":"19850314"}` missed.
-  After a cue only.
-- ⬜ **REC-4** MRN with letter prefix or hyphens — `MRN: E1234567`, `MRN: 12-345-678` missed
-  (`regex.go:147`). After the label only; no internal spaces.
 - ⬜ **REC-5** Medicare MBI as a new type — `MBI: 1EG4-TE5-MK73` missed. Dashed form anywhere, undashed
   only after `MBI`/`Medicare`, per-position validator; trap an uppercase 11-char request ID.
 
 ## §4 Robustness & API (API)
 
-- ⬜ **API-2** Runnable godoc Examples — `ExampleChain_Redact` (quickstart), `ExampleMask`,
-  `ExampleRegex_SetPatternPack`, allow-list. None exist.
-- ⬜ **API-3** Presidio client, non-breaking part — trailing-slash URL gives `//analyze`
-  (`presidio.go:110`); non-200 body neither drained nor quoted (`:120`); language hard-coded `"en"`
-  (`:100`); injectable `*http.Client`; max-chars guard (spaCy default 1M); `PresidioEntityMap` global
-  read in `Detect` is a race if mutated — copy per instance.
 - ⬜ **API-4** Adoption, additive — per-type enable/disable (the ask-meadowlark port forked to drop
   uncued DOB), `MaskFunc func(Span, string) string` (+ HMAC pseudonymization Example), exported
   `Type…` constants, `Chain.SetPatternPack` forwarding to each detector.
@@ -134,23 +121,17 @@ Label-cued only; none of these widens an unlabelled shape.
 
 ## §5 Performance (PERF)
 
-Baseline at `8b02d83` (Apple M5): ~2.5–3 MB/s; 1 KB log line 430 µs, 100 KB JSON 40 ms, 1 MB 390 ms.
-Profile is almost all `regexp`; clean and dirty input cost the same.
+`bench_test.go` holds the benchmarks. After PERF-1 (`22c38af`, Apple M5, clean / dirty / one `%20`):
+1 KB log 270 / 251 / 304 µs; 100 KB JSON 11.0 / 33.9 / 22.8 ms; 1 MB prose 105 / 304 / 213 ms. Dirty
+text gains least: its cue words are present, so their recognizers run. Profile is almost all `regexp`.
 
-- ⬜ **PERF-1** Commit `bench_test.go` (1 KB log, 100 KB JSON, 1 MB text; clean, dirty, clean+`%20`,
-  clean+NBSP) and skip recognizers whose required literal is absent (`@` for EMAIL; cue words for
-  unformatted SSN/PHONE, MRN, labelled DOB — the labelled-DOB regex alone is 172 of ~400 µs/KB,
-  `regex.go:155-166`). Prototype: 1 KB 430→144 µs, 1 MB 390→166 ms, corpus green.
-- ⬜ **PERF-2** One `%20` or NBSP rescans the whole text (1 KB 430→751 µs; 1 MB 390→790 ms) — rescan
-  bounded windows around decoded/folded bytes. After ENC-1…ENC-4 land, since they add stages.
+- ⬜ **PERF-2** One `%20` or NBSP still costs a second full read (1 MB clean 105 → 213 ms) — rescan
+  bounded windows around decoded/folded bytes instead.
 
 ## §6 Measurement (MEAS)
 
 Corpus at `8b02d83`: 81 entries, 113 floor values, 3 Presidio-only, 49 traps; coverage 94.9%.
 
-- ⬜ **MEAS-2** CI — pinned `staticcheck` via `go run` (clean today, no go.mod change); Go matrix
-  `['1.22','stable']`; enforce the README's "over 90%" coverage or drop the number (README:160).
-  govulncheck only non-blocking on stable (14 stdlib findings, toolchain-owned).
 - ⬜ **MEAS-3** Corpus shapes — entries are short (median 66 chars), 4 multi-line, 1 code, 0 real table
   rows. Add a structured log line, a CSV row under its header, a multi-paragraph clinical note with
   visit-date traps, a code snippet with hex constants; optional `shape`/`targets` fields.
@@ -162,7 +143,7 @@ Corpus at `8b02d83`: 81 entries, 113 floor values, 3 Presidio-only, 49 traps; co
 - ⬜ **REL-1** Cut `v0.1.2` — exported API unchanged since `v0.1.1`; Unreleased fixes a Chain panic,
   the zero-`Timeout` Presidio bug, quadratic `Mask`, per-call regex compile. Tagging is public:
   owner's call, §8.
-- ⬜ **REL-2** README states cost per KB for request-path users once PERF-1 lands.
+- ⬜ **REL-2** README states cost per KB for request-path users (numbers in §5).
 
 ## §8 Open-decisions index
 
