@@ -52,8 +52,8 @@ checks belong to the regex floor's own recognizers:
 | `IP` | dotted quad; IPv6 of three or more groups, full or `::`-compressed (`2001:db8:85a3::8a2e:370:7334`, `[IPv6:2606:4700:4700::1111]`, `::ffff:192.0.2.1`), found by a linear scan; CIDR when the Presidio tier claims it | octet range, no leading zeros, not part of a longer dotted run such as an OID, not a User-Agent product version (`Chrome/120.0.0.0`); IPv6 must parse, and a MAC or WWN, a C++ scope (`std::string`), a clock time or `::1` is not one |
 | `EMAIL` | RFC-ish local@domain.tld, in Latin, Greek or Cyrillic letters (`müller@münchen.de`) | an image asset name (`logo@2x.png`), a method call (`A@np.linalg.inv(B)`) and an SSH remote followed by `:` and a path are not addresses |
 | `PHONE` | NANP (with or without `+1` / `1-`), E.164, and international numbers as printed (`+44 20 7946 0958`, `+55 (11) 91234-5678`); unformatted NANP (`4155550173`) only after a phone label (`Phone:`, `Ph:`, `"mobile":`, `homePhone=`, `cellphone`, `mobileNo`, `contactNumber`, `Fax`), optionally followed by `is` or `was` | NANP: area code and exchange start 2–9, not part of a longer digit run, hyphen adjacency; a `+1` number has exactly ten digits after the `+1` |
-| `MRN` | the `MRN`, `Medical Record`, `Med Rec` or `MR#` label, optionally followed by `is` or `was`, then 6–10 digits: `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MR#: 1234567`, `MRN is 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567`, `Medical Record Number: 1234567`, `"medicalRecordNumber": "1234567"` | the label must start a word or a camelCase hump; `MR` needs its `#`, so the title `Mr` never counts; a line break is crossed only after a separator |
-| `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `patientDob`, `date of birth`, `born`, `birthDate`, `<dob>`, `<birthDate value="…">`, any of them optionally followed by `is` or `was`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, and month names (`14-Mar-1985`, `14th March 1985`) | month 01–12, day 01–31 (range only, not calendar-aware); unlabelled, not followed by a clock time or one end of a date range; the label for the other forms |
+| `MRN` | the `MRN`, `Medical Record`, `Med Rec` or `MR#` label, optionally followed by `is` or `was`, then 6–10 digits, optionally after a one- or two-letter prefix or joined by single hyphens (`MRN: E1234567`, `MRN: 12-345-678`; no spaces inside the value): `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MR#: 1234567`, `MRN is 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567`, `Medical Record Number: 1234567`, `"medicalRecordNumber": "1234567"` | the label must start a word or a camelCase hump; `MR` needs its `#`, so the title `Mr` never counts; a line break is crossed only after a separator |
+| `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `patientDob`, `date of birth`, `born`, `birthDate`, `<dob>`, `<birthDate value="…">`, any of them optionally followed by `is` or `was`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, ISO with a time and zone (`1985-03-14T00:00:00Z`, `1985-03-14 00:00:00`, masked whole), compact `YYYYMMDD` (`19850314`), and month names (`14-Mar-1985`, `14th March 1985`) | month 01–12, day 01–31 (range only, not calendar-aware); unlabelled, not followed by a clock time or one end of a date range; the label for the other forms |
 
 Text that carries JSON string escapes, percent-encoding or look-alike punctuation is read twice, as
 given and normalized: JSON escapes are decoded, so a value in a logged body is read as the string it
@@ -164,9 +164,9 @@ Stated plainly, because the failure mode of a redaction library is silent under-
 - **Bare MRNs** without an `MRN` prefix are not matched, for the same reason. Neither is an `MRN`
   label with its value on the next line and no separator between them: a table header ending in
   `MRN` would otherwise claim the first number of the next row.
-- **Dates other than `MM/DD/YYYY`** (`3/14/1985`, `1985-03-14`, `14.03.1985`) are only claimed as
-  `DOB` right after a birth label. Unlabeled, they are almost always appointment, invoice, or log
-  dates.
+- **Dates other than `MM/DD/YYYY`** (`3/14/1985`, `1985-03-14`, `14.03.1985`, `19850314`,
+  `1985-03-14T00:00:00Z`) are only claimed as `DOB` right after a birth label. Unlabeled, they are
+  almost always appointment, invoice, or log dates.
 - **Bare 10-digit phone numbers** (`4155550173`) are not matched unless a phone label sits right
   before them, for the same reason as bare SSNs. As for MRN, a label's value on the next line is
   claimed only after a separator.

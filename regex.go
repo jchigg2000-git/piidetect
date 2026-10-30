@@ -149,8 +149,9 @@ func builtinRecognizers() []recognizer {
 		// ending in "MRN" never claims the first number of the next row.
 		// Quotes admit JSON and dict keys; mrnLabelStart stands in for a
 		// leading \b so that snake_case keys (patient_mrn) count too.
-		{typ: "MRN", confidence: 0.85,
-			re:       regexp.MustCompile(`(?i)(?:(?:MRN|medical[\t\p{Zs}_-]*record|med\.?[\t\p{Zs}_-]*rec\.?)(?:[\t\p{Zs}_]*(?:#|No\.?|Num(?:ber)?))?|MR#)(?:[\t\p{Zs}]+(?:is|was)\b)?["']?[\t\p{Zs}]*(?:[-:=#>]{1,2}[\t\p{Zs}]*(?:\r?\n[\t\p{Zs}]*)?)?["']?\d{6,10}\b`),
+		// The value may carry a one- or two-letter prefix (E1234567) and
+		// internal hyphens (12-345-678); see findMRN.
+		{typ: "MRN", confidence: 0.85, find: findMRN,
 			validate: mrnLabelStart},
 		// MM/DD/YYYY anywhere, except where it is plainly not a birth date: a
 		// log timestamp or one end of a date range (see dobNotEvent).
@@ -159,7 +160,9 @@ func builtinRecognizers() []recognizer {
 			validate: dobNotEvent},
 		// Dates of birth as people actually write them: unpadded, "-" or "."
 		// separators, day or month first, two-digit years, ISO, month names
-		// (14-Mar-1985, 14th March 1985).
+		// (14-Mar-1985, 14th March 1985), an ISO date with its time and zone
+		// (1985-03-14T00:00:00Z, as Go marshals a time.Time) and compact
+		// YYYYMMDD (19850314).
 		// Unlabeled, these shapes are overwhelmingly appointment, invoice and
 		// log dates, so dobCue requires a birth label right before the value.
 		// The digit-led shapes open without \b so a date glued to its cue
@@ -168,7 +171,8 @@ func builtinRecognizers() []recognizer {
 		{typ: "DOB", confidence: 0.7,
 			re: regexp.MustCompile(`(?i)(?:` +
 				`(?:0?[1-9]|[12]\d|3[01])[-/.](?:0?[1-9]|[12]\d|3[01])[-/.](?:19|20)?\d{2}` +
-				`|(?:19|20)\d{2}[-/.](?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01])` +
+				`|(?:19|20)\d{2}[-/.](?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01])` + isoTimeTail +
+				`|(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])` +
 				`|(?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?(?:\.? |-)(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*(?:\.?,? |-)(?:19|20)?\d{2}` +
 				`|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? (?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?,? (?:19|20)\d{2}` +
 				`)\b`),
@@ -465,6 +469,48 @@ func mrnLabelStart(text string, start, _ int) bool {
 	}
 	prev := text[start-1]
 	return prev >= 'a' && prev <= 'z' && text[start] == 'M'
+}
+
+// isoTimeTail is the optional clock time and zone after an ISO date:
+// "T00:00:00Z", " 00:00:00", "T09:30:00.123-05:00", " 00:00:00+00". Only the
+// labelled DOB recognizer uses it, so the time is masked with the date.
+const isoTimeTail = `(?:[T ](?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:[.,]\d{1,9})?)?(?:Z| ?[+-](?:[01]\d|2[0-3])(?::?[0-5]\d)?)?)?`
+
+// mrnRE is the MRN label (MR only with its #, never the title), an optional
+// is or was, its separator, and the value as group 1: an
+// optional one- or two-letter prefix, then digit groups joined by single
+// hyphens. No spaces inside the value, which would swallow a count after it.
+var mrnRE = regexp.MustCompile(`(?i)(?:(?:MRN|medical[\t\p{Zs}_-]*record|med\.?[\t\p{Zs}_-]*rec\.?)(?:[\t\p{Zs}_]*(?:#|No\.?|Num(?:ber)?))?|MR#)(?:[\t\p{Zs}]+(?:is|was)\b)?["']?[\t\p{Zs}]*(?:[-:=#>]{1,2}[\t\p{Zs}]*(?:\r?\n[\t\p{Zs}]*)?)?["']?((?:[A-Z]{1,2}-?)?\d+(?:-\d+)*)\b`)
+
+// findMRN returns the labelled MRNs in text. RE2 cannot count digits across
+// hyphens, so the value is cut here: digit groups are kept while the total
+// stays within 10, and the value needs at least 6. "MRN: 4481920-2026" keeps
+// 4481920, as the plain 6-10 digit rule always did; 11 digits in one run is
+// not an MRN.
+func findMRN(text string) [][]int {
+	var hits [][]int
+	for _, m := range mrnRE.FindAllStringSubmatchIndex(text, -1) {
+		val := text[m[2]:m[3]]
+		digits, cut := 0, -1
+		for i := 0; i <= len(val); i++ {
+			if i < len(val) && val[i] != '-' {
+				if isDigit(val[i]) {
+					digits++
+				}
+				continue
+			}
+			if digits > 10 {
+				break
+			}
+			if digits >= 6 {
+				cut = i
+			}
+		}
+		if cut >= 0 {
+			hits = append(hits, []int{m[0], m[2] + cut})
+		}
+	}
+	return hits
 }
 
 // cueStart says where a label may begin. The short labels must start a word

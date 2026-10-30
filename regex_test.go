@@ -160,3 +160,28 @@ func TestLabelVerbsAndAliases(t *testing.T) {
 		}
 	}
 }
+
+// After a birth cue a DOB may be a timestamp (masked whole, time and zone
+// included) or compact YYYYMMDD; after the MRN label the value may carry a
+// letter prefix or internal hyphens. Unlabelled, neither date shape is claimed.
+func TestLabelledDOBAndMRNShapes(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{`{"dob":"1985-03-14T00:00:00Z"}`, `{"dob":"[DOB]"}`},
+		{`{"dob":"1985-03-14T09:30:00.123456789-05:00"}`, `{"dob":"[DOB]"}`},
+		{"DOB: 1985-03-14 00:00:00 on file", "DOB: [DOB] on file"},
+		{`{"dob":"19850314"}`, `{"dob":"[DOB]"}`},
+		{"DOB: 19851314 typo", "DOB: 19851314 typo"},
+		{"build 19850314 at 2026-10-22T14:30:00Z", "build 19850314 at 2026-10-22T14:30:00Z"},
+		{"MRN: E1234567 seen", "[MRN] seen"},
+		{"MRN: AB-1234567 seen", "[MRN] seen"},
+		{"MRN: 12-345-678 seen", "[MRN] seen"},
+		{"MRN: 4481920-2026", "[MRN]-2026"},
+		{"MRN: 12-34 seen", "MRN: 12-34 seen"},
+		{"MRN: 12345678901", "MRN: 12345678901"},
+		{"MRN: 4481920 12 visits", "[MRN] 12 visits"},
+	} {
+		if got, _ := New().Redact(context.Background(), c.in); got != c.want {
+			t.Errorf("Redact(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

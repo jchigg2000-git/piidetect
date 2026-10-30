@@ -27,6 +27,13 @@
   `ssn_number`; `Ph:`, `cellphone`, `mobileNo`, `contactNumber`; `MR#: 4481920`; and `dob` after a
   camelCase hump (`patientDob`, `memberDOB`). `SS` and `MR` count only with their `#`, so a bare
   `SS` or the title `Mr` before a number does not.
+- **DOB:** after a birth label, a timestamp was missed or half-masked: `{"dob":"1985-03-14T00:00:00Z"}`
+  (how Go marshals a `time.Time`) was missed, and `DOB: 1985-03-14 00:00:00` left the time in the
+  clear. The time and zone are now masked with the date. Compact `YYYYMMDD` (`{"dob":"19850314"}`)
+  is now read too, month 01–12 and day 01–31. Unlabelled, neither shape is claimed.
+- **MRN:** a value with a letter prefix (`MRN: E1234567`) or internal hyphens (`MRN: 12-345-678`)
+  was missed. Both are read after the label, still 6–10 digits; spaces inside the value are not, so
+  `MRN: 4481920 12 visits` does not take the count.
 - **Chain:** a `Chain{}` with no detectors returned the text in the clear with no error:
   `(&Chain{}).Redact(ctx, "ssn 078-05-1120")` gave back the SSN. It now runs the built-in regex
   floor in their place and reports the new `ErrNoDetectors`, so it gives `ssn [SSN]` and the error.
