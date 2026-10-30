@@ -10,6 +10,13 @@
   sent; `Detect` returns an error, so the caller fails closed instead of meeting a sidecar 500.
 - **Examples:** runnable godoc examples for the quickstart (`Chain.Redact`), `Mask`,
   `Regex.SetPatternPack` and an allow list via `Chain.SetPatternPack`. Each is a test.
+- **Custom masking:** `MaskFunc`, `MaskWith` and `Chain.RedactWith` replace each merged span with
+  whatever the function returns, given the span and the original text it covers, instead of
+  `[TYPE]`. The example pseudonymizes with HMAC-SHA256: the same email always gets the same token.
+  A nil function is `Mask`, whose speed and allocations are unchanged. Masking is still not
+  reversible; a caller who needs the value back keeps its own key or table.
+- **Merge:** equal-confidence claims no longer leave a merged span's type to input order. The claim
+  that starts first wins, then the longer, then the lower `Type` in byte order.
 
 ### Fixed
 

@@ -42,6 +42,29 @@ func TestMaskOverlappingSpansLeaveNothing(t *testing.T) {
 	}
 }
 
+// MaskWith gets one call per merged span, with the merged span's type and the
+// whole original text it covers — not either claim's fragment — and that type
+// does not depend on the order the claims arrive in.
+func TestMaskWithPassesMergedOriginal(t *testing.T) {
+	text := "0123456789ABCDEFGHIJKLMNOP"
+	for _, spans := range [][]Span{
+		{{Start: 10, End: 20, Type: "B", Confidence: 0.9}, {Start: 15, End: 25, Type: "A", Confidence: 0.9}, {Start: 10, End: 20, Type: "C", Confidence: 0.9}},
+		{{Start: 10, End: 20, Type: "C", Confidence: 0.9}, {Start: 15, End: 25, Type: "A", Confidence: 0.9}, {Start: 10, End: 20, Type: "B", Confidence: 0.9}},
+	} {
+		var calls []string
+		got := MaskWith(text, spans, func(sp Span, value string) string {
+			calls = append(calls, sp.Type+"="+value)
+			return "<" + sp.Type + ">"
+		})
+		if want := "0123456789<B>P"; got != want {
+			t.Errorf("MaskWith = %q, want %q", got, want)
+		}
+		if len(calls) != 1 || calls[0] != "B=ABCDEFGHIJKLMNO" {
+			t.Errorf("MaskFunc calls = %q, want [B=ABCDEFGHIJKLMNO]", calls)
+		}
+	}
+}
+
 // Mask used to rebuild the whole string once per span: 20k spans in 380KB
 // allocated 7.9GB. It must stay a single pass.
 func TestMaskIsOnePass(t *testing.T) {

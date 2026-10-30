@@ -223,8 +223,10 @@ func (sp Span) within(text string) bool {
 }
 
 // Merge sorts spans and collapses overlaps: the union wins the extent, the
-// higher confidence wins type and provenance. It sorts and overwrites spans in
-// place and returns a prefix of it.
+// higher confidence wins type and provenance. On equal confidence the claim
+// that starts first wins, then the longer, then the lower Type in byte order,
+// so the result does not depend on the order of spans. It sorts and
+// overwrites spans in place and returns a prefix of it.
 func Merge(spans []Span) []Span {
 	if len(spans) < 2 {
 		return spans
@@ -233,7 +235,18 @@ func Merge(spans []Span) []Span {
 		if spans[i].Start != spans[j].Start {
 			return spans[i].Start < spans[j].Start
 		}
-		return spans[i].End > spans[j].End
+		if spans[i].End != spans[j].End {
+			return spans[i].End > spans[j].End
+		}
+		// Ties broken so a merged span's Type is the same whatever order the
+		// claims came in.
+		if spans[i].Confidence != spans[j].Confidence {
+			return spans[i].Confidence > spans[j].Confidence
+		}
+		if spans[i].Type != spans[j].Type {
+			return spans[i].Type < spans[j].Type
+		}
+		return spans[i].Detector < spans[j].Detector
 	})
 	out := spans[:1]
 	for _, sp := range spans[1:] {

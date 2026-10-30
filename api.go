@@ -38,3 +38,11 @@ func (c *Chain) Redact(ctx context.Context, text string) (string, []error) {
 	spans, errs := c.Run(ctx, text)
 	return Mask(text, spans), errs
 }
+
+// RedactWith is Redact with each merged span replaced by f(span, value)
+// instead of [TYPE]; see MaskFunc. Errors mean what they mean for Redact. A
+// nil f is Redact.
+func (c *Chain) RedactWith(ctx context.Context, text string, f MaskFunc) (string, []error) {
+	spans, errs := c.Run(ctx, text)
+	return MaskWith(text, spans, f), errs
+}

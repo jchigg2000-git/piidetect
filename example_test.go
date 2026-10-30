@@ -2,7 +2,10 @@ package piidetect_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"fmt"
+	"strings"
 
 	"github.com/jchigg2000-git/piidetect"
 )
@@ -30,6 +33,27 @@ func ExampleMask() {
 	}
 	fmt.Println(piidetect.Mask(text, spans))
 	// Output: call [PHONE] now
+}
+
+// A MaskFunc keyed with HMAC-SHA256 pseudonymizes: the same address always
+// becomes the same token, so records can still be joined on it, and different
+// addresses differ. Only the key holder can test a guess, and nothing here
+// reverses a token; keep your own table if you need to.
+func ExampleChain_RedactWith() {
+	key := []byte("load-this-from-your-secret-store")
+	pseudonym := func(sp piidetect.Span, value string) string {
+		mac := hmac.New(sha256.New, key)
+		mac.Write([]byte(sp.Type + "\x00" + strings.ToLower(value)))
+		return fmt.Sprintf("[%s:%x]", sp.Type, mac.Sum(nil)[:3])
+	}
+	clean, errs := piidetect.New().RedactWith(context.Background(),
+		"jane.doe@example.org wrote to bob@example.com; cc Jane.Doe@example.org", pseudonym)
+	if len(errs) > 0 {
+		fmt.Println("dropped")
+		return
+	}
+	fmt.Println(clean)
+	// Output: [EMAIL:a9c778] wrote to [EMAIL:4be684]; cc [EMAIL:a9c778]
 }
 
 // A pattern pack adds recognizers to the floor at runtime, swapped in

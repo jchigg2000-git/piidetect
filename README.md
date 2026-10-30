@@ -161,6 +161,27 @@ cannot be used to smuggle real PII past the filter by sitting next to it. A clai
 lying wholly inside the allowed term goes with it: the floor reads `support+billing@example.com` with
 `+` as a space too, and `billing@example.com` there is the term's own characters, not another value.
 
+### Custom replacements
+
+`Redact` and `Mask` write `[TYPE]`. `RedactWith` and `MaskWith` take a `MaskFunc` instead, called
+once per merged span with the span and the original text it covers. Keyed with HMAC, it
+pseudonymizes: the same address always becomes the same token, so records still join on it.
+
+```go
+pseudonym := func(sp piidetect.Span, value string) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(sp.Type + "\x00" + strings.ToLower(value)))
+	return fmt.Sprintf("[%s:%x]", sp.Type, mac.Sum(nil)[:3])
+}
+clean, errs := piidetect.New().RedactWith(ctx, text, pseudonym)
+// jane.doe@example.org … Jane.Doe@example.org  →  [EMAIL:a9c778] … [EMAIL:a9c778]
+```
+
+When claims overlap, the merged span takes the type of the highest-confidence one; on a tie, the one
+that starts first, then the longer, then the lower type name. Whatever the function returns goes into
+the output as is, so a short or unkeyed hash of a low-entropy value (an SSN, a date) can be reversed
+by guessing.
+
 ## What it does not do
 
 Stated plainly, because the failure mode of a redaction library is silent under-detection:
@@ -199,6 +220,7 @@ Stated plainly, because the failure mode of a redaction library is silent under-
   type would bypass the type guards. Add a type to the map to accept it.
 - **Spans are byte offsets.** Presidio results are converted from codepoints on the way in.
 - **Masking is not reversible.** `Mask` replaces a span with `[TYPE]`; there is no detokenization.
+  A `MaskFunc` token is not reversible either, unless you keep your own key or table.
 
 If you need a guarantee rather than a filter, do not use a filter.
 
