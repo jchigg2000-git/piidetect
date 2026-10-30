@@ -160,8 +160,9 @@ Extracted from the redaction gateway in
 [air-traffic](https://github.com/jchigg2000-git/air-traffic), where it runs inline on proxied
 requests. Zero external module requirements — `go list -m all` returns only this module, and CI
 enforces that. Test coverage is over 90%, including a golden corpus of marked-up cases with explicit
-traps that must *not* be detected. Every corpus value must be found and fully covered, and nothing
-unmarked may be claimed; one miss fails CI.
+traps that must *not* be detected. Every corpus value must be found and fully covered by a span of
+its own type and be gone from `Redact` output, and nothing else may be claimed; one miss fails CI.
+`go test -v -run Corpus` prints the per-type table.
 
 ## License
 

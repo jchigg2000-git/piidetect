@@ -5,14 +5,17 @@ import (
 	"testing"
 )
 
-// The G2 acceptance floors: on regex-detectable corpus entries the built-in
-// recognizers hold recall ≥ 0.95 and precision ≥ 0.97, no trap ever fires,
-// and — stricter than the floors — no truth is missed or only partly covered
-// and nothing unmarked is claimed. This test is also the CI half of the recall
-// ratchet — a pattern change that regresses a type fails here.
+// The G2 acceptance gate on regex-detectable corpus entries, scored by the
+// rules at the top of corpus_test.go: every value found and fully covered by a
+// span of its type, no trap fired, nothing else claimed. Each failure fails on
+// its own, so the old 0.95 recall / 0.97 precision floors could never trip and
+// are gone. In their place, every type the built-in recognizers emit must be
+// exercised by at least one marked value, so dropping or mis-tagging a type's
+// entries cannot quietly empty its row. This test is also the CI half of the
+// recall ratchet — a pattern change that regresses a type fails here.
 func TestRegexCorpusFloors(t *testing.T) {
 	det := NewRegex()
-	var tp, fn, fp int
+	score := map[string]*typeScore{}
 	for _, e := range loadCorpus(t) {
 		if !hasEngine(e, "regex") {
 			continue
@@ -21,59 +24,13 @@ func TestRegexCorpusFloors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", e.Name, err)
 		}
-		for _, sp := range spans {
-			for _, trap := range e.Traps {
-				if overlaps(sp, trap) {
-					t.Errorf("%s: trap fired — %s detected inside a %q trap span", e.Name, sp.Type, e.Text[trap.Start:trap.End])
-				}
-			}
-		}
-		// Presidio-only truths (names, addresses) are not regex's job.
-		for _, truth := range e.Truths {
-			if truth.Type == "PERSON_NAME" || truth.Type == "ADDRESS" {
-				continue
-			}
-			// A truth counts only when one span of its type covers all of
-			// it: a partial hit leaves the rest of the value in the redacted
-			// text ("o'" of "o'brien@example.com").
-			matched := false
-			for _, sp := range spans {
-				if covers(sp, truth) && sp.Type == truth.Type {
-					matched = true
-					break
-				}
-			}
-			if matched {
-				tp++
-			} else {
-				// A miss fails on its own: against a corpus this size the
-				// recall floor tolerates one silent miss, which is how
-				// "MRN: 86753090" went undetected while this test passed.
-				fn++
-				t.Errorf("%s: missed %s %q", e.Name, truth.Type, e.Text[truth.Start:truth.End])
-			}
-		}
-		for _, sp := range spans {
-			hit := false
-			for _, truth := range e.Truths {
-				if overlaps(sp, truth) {
-					hit = true
-					break
-				}
-			}
-			if !hit {
-				fp++
-				t.Errorf("%s: false positive %s %q", e.Name, sp.Type, e.Text[sp.Start:sp.End])
-			}
-		}
+		scoreRegexEntry(t, e, spans, score)
 	}
-	recall := float64(tp) / float64(tp+fn)
-	precision := float64(tp) / float64(tp+fp)
-	if recall < 0.95 {
-		t.Errorf("regex recall = %.3f (tp=%d fn=%d), floor 0.95", recall, tp, fn)
-	}
-	if precision < 0.97 {
-		t.Errorf("regex precision = %.3f (tp=%d fp=%d), floor 0.97", precision, tp, fp)
+	logScoreTable(t, "regex corpus, per type:", score)
+	for _, r := range builtinRecognizers() {
+		if s := score[r.typ]; s == nil || s.found+s.missed == 0 {
+			t.Errorf("built-in type %s has no marked value in the corpus", r.typ)
+		}
 	}
 }
 
