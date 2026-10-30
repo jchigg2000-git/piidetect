@@ -35,9 +35,13 @@ func (n needs) metBy(lower string) bool {
 	return true
 }
 
-// withNeeds returns rec with its needs derived from its regex and cues.
+// withNeeds returns rec with its needs derived from its regex and cues, and,
+// for a regex recognizer, its cut bytes (regexCuts).
 func (rec recognizer) withNeeds() recognizer {
 	rec.needs = nil
+	if rec.find == nil {
+		rec.cuts = regexCuts(rec.re)
+	}
 	if lits := cueNeeds(rec.cues); lits != nil {
 		rec.needs = append(rec.needs, lits)
 	}

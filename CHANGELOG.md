@@ -195,6 +195,9 @@
   word for an unlabelled-shape SSN, PHONE or DOB, no label for MRN — with the literals derived from
   the regexes and cue tables and checked on the normalized text too; clean text reads about 3x
   faster (1 MB prose 355→105 ms) and `bench_test.go` tracks it.
+- **Regex:** one `%20`, NBSP or JSON escape no longer costs a second read of the whole text; the
+  normalized text is re-read only in windows around the changed bytes, with the same result as a
+  whole read (1 MB prose 236→126 ms, 100 KB JSON 24→12 ms).
 
 ## v0.1.1 — 2026-09-23
 

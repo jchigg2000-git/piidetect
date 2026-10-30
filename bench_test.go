@@ -8,35 +8,20 @@ import (
 
 // Benchmarks of the regex floor on the three shapes it is fed: a log line, a
 // JSON body and prose. Each is read clean (no value), dirty (a few values),
-// and clean with one %20 or one NBSP, either of which sends the whole text
-// through the normalized second pass. Run with
+// and clean with one %20, one NBSP or one JSON \n escape, any of which sends
+// the text through the normalized second pass, read in windows around it. Run
+// with
 //
 //	go test -run '^$' -bench RegexDetect -count 5
 func BenchmarkRegexDetect(b *testing.B) {
-	shapes := []struct {
-		name  string
-		clean string
-		dirty []string // values spliced in at even intervals
-	}{
-		{"log1KB", benchFill(benchLogLine, 1<<10), []string{
-			" email=jane.doe@example.org", " ssn=078-05-1120", " phone=(415) 555-0173",
-		}},
-		{"json100KB", benchFill(benchJSONRecord, 100<<10), []string{
-			`{"email":"jane.doe@example.org"},`, `{"mrn":"4481920"},`,
-			`{"dob":"1985-03-14"},`, `{"card":"4111 1111 1111 1111"},`,
-		}},
-		{"prose1MB", benchFill(benchProse, 1<<20), []string{
-			" Write to jane.doe@example.org. ", " Her SSN is 078-05-1120. ",
-			" Call 415-555-0173. ", " DOB: 03/14/1985. ", " MRN 4481920. ",
-		}},
-	}
 	det := NewRegex()
 	ctx := context.Background()
-	for _, s := range shapes {
+	for _, s := range benchShapes() {
 		variants := []struct{ name, text string }{
 			{"clean", s.clean},
 			{"dirty", benchSplice(s.clean, s.dirty...)},
 			{"pct20", benchSplice(s.clean, " a%20b ")},
+			{"esc", benchSplice(s.clean, ` a\nb `)},
 			{"nbsp", benchSplice(s.clean, " a b ")},
 		}
 		for _, v := range variants {
@@ -50,6 +35,28 @@ func BenchmarkRegexDetect(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+type benchShape struct {
+	name  string
+	clean string
+	dirty []string // values spliced in at even intervals
+}
+
+func benchShapes() []benchShape {
+	return []benchShape{
+		{"log1KB", benchFill(benchLogLine, 1<<10), []string{
+			" email=jane.doe@example.org", " ssn=078-05-1120", " phone=(415) 555-0173",
+		}},
+		{"json100KB", benchFill(benchJSONRecord, 100<<10), []string{
+			`{"email":"jane.doe@example.org"},`, `{"mrn":"4481920"},`,
+			`{"dob":"1985-03-14"},`, `{"card":"4111 1111 1111 1111"},`,
+		}},
+		{"prose1MB", benchFill(benchProse, 1<<20), []string{
+			" Write to jane.doe@example.org. ", " Her SSN is 078-05-1120. ",
+			" Call 415-555-0173. ", " DOB: 03/14/1985. ", " MRN 4481920. ",
+		}},
 	}
 }
 

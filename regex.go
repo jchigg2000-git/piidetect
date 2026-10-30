@@ -70,6 +70,10 @@ type recognizer struct {
 	// needs are literals the text must hold for the recognizer to match at
 	// all, derived from re and cues by withNeeds: scan skips it otherwise.
 	needs needs
+	// cuts are the ASCII bytes no hit holds, so the normalized view can be
+	// re-read in windows (window.go). withNeeds derives them from re; a find
+	// recognizer declares its own, and without them reads the whole view.
+	cuts *cutSet
 }
 
 func builtinRecognizers() []recognizer {
@@ -139,7 +143,7 @@ func builtinRecognizers() []recognizer {
 			re:       regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`),
 			validate: validIP},
 		// IPv6, scanned by hand: see ipv6.go.
-		{typ: "IP", confidence: 0.8, find: findIPv6},
+		{typ: "IP", confidence: 0.8, find: findIPv6, cuts: ipv6Cuts},
 		// Electronic format, any case.
 		{typ: "IBAN", confidence: 0.9,
 			re:       regexp.MustCompile(`(?i)\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b`),
@@ -162,7 +166,7 @@ func builtinRecognizers() []recognizer {
 		// leading \b so that snake_case keys (patient_mrn) count too.
 		// The value may carry a one- or two-letter prefix (E1234567) and
 		// internal hyphens (12-345-678); see findMRN.
-		{typ: "MRN", confidence: 0.85, find: findMRN, findRE: mrnRE,
+		{typ: "MRN", confidence: 0.85, find: findMRN, findRE: mrnRE, cuts: regexCuts(mrnRE),
 			validate: mrnLabelStart},
 		// MM/DD/YYYY anywhere, except where it is plainly not a birth date: a
 		// log timestamp or one end of a date range (see dobNotEvent).
@@ -218,7 +222,7 @@ func emailValid(text string, start, end int) bool {
 	}
 	if end+1 < len(text) && text[end] == ':' {
 		rest := text[end+1:]
-		if i := strings.IndexAny(rest, " \t\r\n\"'<>,;)"); i >= 0 {
+		if i := strings.IndexAny(rest, emailPathEnd); i >= 0 {
 			rest = rest[:i]
 		}
 		if strings.Contains(rest, "/") || strings.HasSuffix(rest, ".git") {
@@ -227,6 +231,12 @@ func emailValid(text string, start, end int) bool {
 	}
 	return true
 }
+
+// emailPathEnd ends the path emailValid reads after an address's ':'. The
+// windowed read of the normalized view (window.go) reaches back to it.
+const emailPathEnd = " \t\r\n\"'<>,;)"
+
+func isEmailPathEnd(c byte) bool { return strings.IndexByte(emailPathEnd, c) >= 0 }
 
 // emailLetters are the scripts an email address is matched in; see EMAIL.
 const emailLetters = `\p{Latin}\p{Greek}\p{Cyrillic}`
@@ -301,7 +311,17 @@ func (r *Regex) Detect(ctx context.Context, text string) ([]Span, error) {
 // decoded characters — then mapped back to the offsets of the text as given
 // and marked checked, so the chain does not judge it a second time against
 // escapes it cannot read.
+//
+// The normalized text is read only in windows around the bytes normalizing
+// changed; window.go shows why that finds what a whole read would, less hits
+// the read as given has already found.
 func (r *Regex) detectRaw(ctx context.Context, text string) ([]Span, error) {
+	return r.detect(ctx, text, true)
+}
+
+// detect is detectRaw, reading the whole normalized text unless windowed: the
+// whole read is the reference the windowed one is tested against.
+func (r *Regex) detect(ctx context.Context, text string, windowed bool) ([]Span, error) {
 	recs := builtins
 	if p := r.compiled.Load(); p != nil {
 		recs = *p
@@ -321,7 +341,11 @@ func (r *Regex) detectRaw(ctx context.Context, text string) ([]Span, error) {
 		return spans, err
 	}
 	if dec, orig, ok := normalizedView(text); ok {
-		for _, sp := range scan(ctx, recs, dec) {
+		var reach [][2]int // nil reads the whole view
+		if windowed {
+			reach = viewReach(dec, changedRuns(text, dec, orig))
+		}
+		for _, sp := range scanIn(ctx, recs, dec, reach) {
 			if guard, has := typeGuards[sp.Type]; has && !guard(dec, sp.Start, sp.End) {
 				continue
 			}
@@ -359,6 +383,13 @@ func pastEscape(text string, start int) int {
 // The needs are checked against this same text, so on the normalized view a
 // cue that was fullwidth or percent-encoded as given (ＭＲＮ, ssn%3A) counts.
 func scan(ctx context.Context, recs []recognizer, text string) []Span {
+	return scanIn(ctx, recs, text, nil)
+}
+
+// scanIn is scan reading only each recognizer's windows of text around reach
+// (see windows), or all of text when reach is nil. Needs are still checked
+// against the whole text, and every hit is judged in the whole text.
+func scanIn(ctx context.Context, recs []recognizer, text string, reach [][2]int) []Span {
 	var spans []Span
 	var lower string
 	for _, rec := range recs {
@@ -373,18 +404,25 @@ func scan(ctx context.Context, recs []recognizer, text string) []Span {
 				continue
 			}
 		}
-		for _, loc := range rec.hits(text) {
-			start, end := loc[0], loc[1]
-			if rec.validate != nil && !rec.validate(text, start, end) {
-				continue
+		pieces := [][2]int{{0, len(text)}}
+		if reach != nil {
+			pieces = windows(text, reach, rec.cuts)
+		}
+		for _, piece := range pieces {
+			from := piece[0]
+			for _, loc := range rec.hits(text[from:piece[1]]) {
+				start, end := from+loc[0], from+loc[1]
+				if rec.validate != nil && !rec.validate(text, start, end) {
+					continue
+				}
+				if rec.cues != nil && !labelledBy(text, start, rec.cues) {
+					continue
+				}
+				spans = append(spans, Span{
+					Start: start, End: end, Type: rec.typ,
+					Confidence: rec.confidence, Detector: "regex",
+				})
 			}
-			if rec.cues != nil && !labelledBy(text, start, rec.cues) {
-				continue
-			}
-			spans = append(spans, Span{
-				Start: start, End: end, Type: rec.typ,
-				Confidence: rec.confidence, Detector: "regex",
-			})
 		}
 	}
 	return spans
@@ -613,7 +651,9 @@ func dobCue(text string, start, _ int) bool { return labelledBy(text, start, dob
 // A clock time right after a date ("10/22/2026 14:30:17", ISO's "T").
 var clockAfter = regexp.MustCompile(`^[ T]\d{1,2}:\d{2}`)
 
-// A date range: a connector, then another date on its far side.
+// A date range: a connector, then another date on its far side. What
+// rangeAfter reads past a date must stay within viewRightReach non-blank bytes
+// (window.go); the context checks before a hit, within viewLeftReach.
 const rangeJoin = `(?:[\t ]*-{1,2}[\t ]*|[\t ]+(?:to|and|through|thru|until)[\t ]+)`
 const anyDate = `\d{1,4}[-/.]\d{1,2}[-/.]\d{2,4}`
 

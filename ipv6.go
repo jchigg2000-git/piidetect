@@ -18,6 +18,10 @@ const maxIPv6Run = 64
 
 func isV6Char(c byte) bool { return isHex(c) || c == ':' || c == '.' }
 
+// ipv6Cuts are the bytes findIPv6 restarts at with nothing carried over: a
+// byte outside every run, and outside the label word v6Value looks back over.
+var ipv6Cuts = cutsWhere(func(c byte) bool { return !isV6Char(c) && !isWord(c) })
+
 // findIPv6 returns the [start, end) of each IPv6 address in text.
 func findIPv6(text string) [][]int {
 	var hits [][]int
