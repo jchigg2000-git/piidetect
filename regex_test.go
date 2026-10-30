@@ -122,3 +122,41 @@ func TestSignedCountersAreNotPhones(t *testing.T) {
 		}
 	}
 }
+
+// A label may be joined to its value by "is" or "was", and the label lists
+// cover the camelCase, snake_case and abbreviated keys real records use. The
+// title "Mr" and a bare "number" are still not labels.
+func TestLabelVerbsAndAliases(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		// One "is"/"was" (or "is:") between label and value.
+		{"My SSN is 078051120", "My SSN is [SSN]"},
+		{"ssn was: 078051120", "ssn was: [SSN]"},
+		{"MRN is 4481920", "[MRN]"},
+		{"her date of birth is 1985-03-14", "her date of birth is [DOB]"},
+		{"DOB is 3/14/85", "DOB is [DOB]"},
+		{"my phone number is 4155550173", "my phone number is [PHONE]"},
+		// The added labels.
+		{"patientDob: 1985-03-14", "patientDob: [DOB]"},
+		{`{"memberDOB":"3/14/85"}`, `{"memberDOB":"[DOB]"}`},
+		{"SS#: 078051120", "SS#: [SSN]"},
+		{"SS # is 078051120", "SS # is [SSN]"},
+		{"Soc Sec #: 078051120", "Soc Sec #: [SSN]"},
+		{"ssnNumber=078051120", "ssnNumber=[SSN]"},
+		{`{"ssn_number":"078051120"}`, `{"ssn_number":"[SSN]"}`},
+		{"Ph: 4155550173", "Ph: [PHONE]"},
+		{"cellphone 4155550173", "cellphone [PHONE]"},
+		{"mobileNo=4155550173", "mobileNo=[PHONE]"},
+		{`{"contactNumber":"4155550173"}`, `{"contactNumber":"[PHONE]"}`},
+		{"MR#: 4481920", "[MRN]"},
+		// Still not labels.
+		{"Your confirmation number is 483920571", "Your confirmation number is 483920571"},
+		{"SS 078051120", "SS 078051120"},
+		{"Mr 4481920 and MR. 4481920", "Mr 4481920 and MR. 4481920"},
+		{"SSN island 078051120", "SSN island 078051120"},
+		{"MRN island 4481920", "MRN island 4481920"},
+	} {
+		if got, _ := New().Redact(context.Background(), c.in); got != c.want {
+			t.Errorf("Redact(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

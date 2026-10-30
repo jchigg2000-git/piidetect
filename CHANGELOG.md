@@ -19,6 +19,14 @@
 - **Presidio:** `PresidioEntityMap` was read on every `Detect`, a data race with a caller editing it.
   `NewPresidio` now copies it; a later edit reaches only the instances built after it.
 
+- **SSN, PHONE, MRN, DOB:** a verb between label and value hid the value: `My SSN is 078051120`,
+  `MRN is 4481920`, `her date of birth is 1985-03-14`, `my phone number is 4155550173` were missed.
+  One `is` or `was` (also `is:`) may now sit between them. `confirmation number is 483920571`
+  stays: `number` alone is not a label.
+- **SSN, PHONE, MRN, DOB:** common labels were missing: `SS#`, `Soc Sec #`, `ssnNumber`,
+  `ssn_number`; `Ph:`, `cellphone`, `mobileNo`, `contactNumber`; `MR#: 4481920`; and `dob` after a
+  camelCase hump (`patientDob`, `memberDOB`). `SS` and `MR` count only with their `#`, so a bare
+  `SS` or the title `Mr` before a number does not.
 - **Chain:** a `Chain{}` with no detectors returned the text in the clear with no error:
   `(&Chain{}).Redact(ctx, "ssn 078-05-1120")` gave back the SSN. It now runs the built-in regex
   floor in their place and reports the new `ErrNoDetectors`, so it gives `ssn [SSN]` and the error.
