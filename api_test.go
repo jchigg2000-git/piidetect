@@ -39,7 +39,9 @@ func TestGuardsRejectLookalikes(t *testing.T) {
 // yields a Luhn-valid card claim. Guarding the merged union of the two would
 // reject both and leave the IBAN in the clear.
 func TestGuardsJudgeClaimsBeforeMerging(t *testing.T) {
-	clean, _ := New().Redact(context.Background(), "Wire GB31 WEST 4234 5698 7654 32 106 EUR")
+	// BE68 5390 0754 7034 is an IBAN; its last three groups and the 1008
+	// after it are a Luhn-valid 4-4-4-4 card.
+	clean, _ := New().Redact(context.Background(), "Wire BE68 5390 0754 7034 1008 EUR")
 	if want := "Wire [IBAN] EUR"; clean != want {
 		t.Errorf("got  %q\nwant %q", clean, want)
 	}

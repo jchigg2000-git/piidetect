@@ -163,6 +163,10 @@
 - **EMAIL:** code: a method call (`y = A@np.linalg.inv(B)`) and an SSH or scp remote
   (`git@github.com:org/repo.git`), whose `:` is followed, with no space, by a path holding a `/` or
   ending `.git`. An address that ends a clause (`email jane@example.org: call her`) still counts.
+- **CREDIT_CARD:** any spacing of 13–19 digits was claimed, so a list of ids that passed Luhn
+  (`ids 42 17 88 93 12 55 61`) was masked as a card. A card must now be printed as cards are:
+  4-4-4-4, 4-4-4-4-3 (19 digits), Amex 4-6-5, Diners 4-6-4, or 13–19 digits unformatted, with
+  spaces or hyphens. A following expiry or CVV still does not hide it.
 
 ### Faster
 

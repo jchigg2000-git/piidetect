@@ -122,12 +122,16 @@ func builtinRecognizers() []recognizer {
 		// excluded so "zip+4 94110-1234" is not a phone.
 		{typ: "PHONE", confidence: 0.85,
 			re: regexp.MustCompile(`\+(?:7|[2-9]\d{1,2})(?:[- ]?\(\d{1,4}\)[- ]?\d(?:[- ]?\d){5,10}|[- ]\d(?:[- ]?\d){7,11})\b`)},
+		// Cards as printed, never any spacing of digits: a list of ids
+		// ("ids 42 17 88 93 12 55 61") is not a card. This rule is the 19-digit
+		// layout, 4-4-4-4-3.
 		{typ: "CREDIT_CARD", confidence: 0.9,
-			re:       regexp.MustCompile(`\b\d(?:[- ]?\d){12,18}\b`),
+			re:       regexp.MustCompile(`\b\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{3}\b`),
 			validate: luhnValid},
-		// The standard card layouts on their own. The rule above is greedy and
-		// runs on into a trailing expiry or CVV ("4111 1111 1111 1111 12/27"),
-		// then fails Luhn on the whole; this one stops at the card.
+		// The other layouts: 4-4-4-4, Amex 4-6-5, Diners 4-6-4, and 13–19
+		// digits unformatted. Kept apart from the rule above so that a CVV after
+		// a 16-digit card ("4111 1111 1111 1111 123") cannot pull the card into
+		// a 19-digit run that fails Luhn; this one stops at the card.
 		{typ: "CREDIT_CARD", confidence: 0.9,
 			re:       regexp.MustCompile(`\b(?:\d{4}[- ]\d{4}[- ]\d{4}[- ]\d{4}|\d{4}[- ]\d{6}[- ]\d{4,5}|\d{13,19})\b`),
 			validate: luhnValid},

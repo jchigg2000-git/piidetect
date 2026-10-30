@@ -125,6 +125,24 @@ func TestSignedCountersAreNotPhones(t *testing.T) {
 	}
 }
 
+// A card is claimed in the layouts cards are printed in, not in any spacing
+// of digits: a Luhn-passing list of ids used to be masked as a card. A CVV
+// after a card still does not hide it.
+func TestCardLayouts(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"ids 42 17 88 93 12 55 61", "ids 42 17 88 93 12 55 61"},
+		{"ids 4 5 6 7 8 9 0 1 2 3 4 5 6 7", "ids 4 5 6 7 8 9 0 1 2 3 4 5 6 7"},
+		{"card 6011 0000 0000 0000 001 ok", "card [CREDIT_CARD] ok"},
+		{"Amex 3782 822463 10005 ok", "Amex [CREDIT_CARD] ok"},
+		{"Diners 3056-930902-5904 ok", "Diners [CREDIT_CARD] ok"},
+		{"card 4111 1111 1111 1111 123 ok", "card [CREDIT_CARD] 123 ok"},
+	} {
+		if got, _ := New().Redact(context.Background(), c.in); got != c.want {
+			t.Errorf("Redact(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // A label may be joined to its value by "is" or "was", and the label lists
 // cover the camelCase, snake_case and abbreviated keys real records use. The
 // title "Mr" and a bare "number" are still not labels.
