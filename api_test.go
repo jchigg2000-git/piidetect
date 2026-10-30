@@ -2,8 +2,10 @@ package piidetect
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The quickstart in the README is this test. If it stops compiling or the
@@ -59,5 +61,46 @@ func TestWithPresidioKeepsRegexFloorFirst(t *testing.T) {
 func TestNewDoesNotRecompileBuiltins(t *testing.T) {
 	if n := testing.AllocsPerRun(10, func() { New() }); n > 10 {
 		t.Errorf("New made %.0f allocations, want the compiled builtins shared", n)
+	}
+}
+
+// A Chain literal with no detectors used to hand the text back in the clear
+// with no error. It now redacts with the floor and says why.
+func TestEmptyChainFailsClosed(t *testing.T) {
+	clean, errs := (&Chain{}).Redact(context.Background(), "ssn 078-05-1120")
+	if len(errs) != 1 || !errors.Is(errs[0], ErrNoDetectors) {
+		t.Errorf("errs = %v, want [ErrNoDetectors]", errs)
+	}
+	if want := "ssn [SSN]"; clean != want {
+		t.Errorf("got %q, want %q", clean, want)
+	}
+}
+
+// Zero values of the engines must not panic: a zero Regex reads with the
+// built-ins, a zero Presidio reports an error.
+func TestZeroValueDetectors(t *testing.T) {
+	var r Regex
+	spans, err := r.Detect(context.Background(), "ssn 078-05-1120")
+	if err != nil || len(spans) != 1 || spans[0].Type != "SSN" {
+		t.Errorf("zero Regex: spans %v, err %v; want one SSN", spans, err)
+	}
+	if _, err := (&Presidio{}).Detect(context.Background(), "x"); err == nil {
+		t.Error("zero Presidio: want an error for its missing URL")
+	}
+}
+
+// The floor used to ignore ctx: 4 MB with a cancelled ctx ran ~2.5 s and
+// returned no error. It must stop and report the cancellation.
+func TestRegexFloorHonoursCancellation(t *testing.T) {
+	text := strings.Repeat("ssn 078-05-1120, mail jane.doe%40example.org; ", 4<<20/47)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	_, errs := New().Run(ctx, text)
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Errorf("cancelled run took %v, want it to stop early", d)
+	}
+	if len(errs) != 1 || !errors.Is(errs[0], context.Canceled) {
+		t.Errorf("errs = %v, want the cancellation reported", errs)
 	}
 }

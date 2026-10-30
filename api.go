@@ -5,8 +5,9 @@ import (
 	"time"
 )
 
-// DefaultTimeout bounds each detector on a Run. The regex floor never needs
-// it; a Presidio sidecar can.
+// DefaultTimeout bounds each detector on a Run. A Presidio sidecar can need
+// it; the regex floor only on text of several megabytes, where it stops and
+// reports the deadline — set Chain.Timeout higher for input that large.
 const DefaultTimeout = 2 * time.Second
 
 // New returns a Chain carrying just the built-in regex floor — no sidecar, no
@@ -28,8 +29,11 @@ func WithPresidio(url string) *Chain {
 }
 
 // Redact is the one-call path: detect, then replace every span with its typed
-// placeholder. Detector errors are returned but the redacted text is always
-// usable — spans found before an error are still masked.
+// placeholder. Detector errors are returned and every span found, before an
+// error too, is still masked — but an error means a value may have been
+// missed, so fail closed on one (drop the text or mask all of it) wherever a
+// leak matters. A Chain with no Detectors redacts with the built-in regex
+// floor and reports ErrNoDetectors.
 func (c *Chain) Redact(ctx context.Context, text string) (string, []error) {
 	spans, errs := c.Run(ctx, text)
 	return Mask(text, spans), errs

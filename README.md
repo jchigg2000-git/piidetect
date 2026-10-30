@@ -96,6 +96,18 @@ The regex floor still runs first and still runs if the sidecar is down — a dea
 regex-only and reports the error alongside the spans it did find. It never fails open and silently
 returns your text unredacted.
 
+## Errors mean fail closed
+
+`Run` and `Redact` return every span they found, but an error means one may have been missed: a
+sidecar was down, a detector timed out (the floor stops between recognizers once the context is
+done, so a cancelled request or several megabytes against `DefaultTimeout` comes back partly read),
+or the chain was misconfigured. Where a leak matters, treat any error as failure — drop the text or
+mask all of it — rather than send on the partial result. Raise `Chain.Timeout` for very large input.
+
+Zero values are safe: a `Chain{}` with no detectors runs the built-in floor in their place and
+reports `ErrNoDetectors`, so `(&Chain{}).Redact(ctx, "ssn 078-05-1120")` gives `ssn [SSN]` and the
+error, never the SSN. A zero `Regex` reads with the built-ins; a zero `Presidio` reports an error.
+
 Presidio entity types are normalized onto this package's vocabulary via `PresidioEntityMap`, and its
 results are gated at `PresidioDefaultScoreGate` (0.4) unless a threshold rule lowers it per type.
 
@@ -122,7 +134,9 @@ so the same rule can match more there than in the regex engine (`\bEMP\d{6}\b` a
 
 Allow-list entries suppress a specific term for a specific type, matched case-insensitively on the
 span's own text. They suppress the term, never a region of the document — so an allow-listed value
-cannot be used to smuggle real PII past the filter by sitting next to it.
+cannot be used to smuggle real PII past the filter by sitting next to it. A claim of the same type
+lying wholly inside the allowed term goes with it: the floor reads `support+billing@example.com` with
+`+` as a space too, and `billing@example.com` there is the term's own characters, not another value.
 
 ## What it does not do
 

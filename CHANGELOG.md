@@ -4,6 +4,22 @@
 
 ### Fixed
 
+- **Chain:** a `Chain{}` with no detectors returned the text in the clear with no error:
+  `(&Chain{}).Redact(ctx, "ssn 078-05-1120")` gave back the SSN. It now runs the built-in regex
+  floor in their place and reports the new `ErrNoDetectors`, so it gives `ssn [SSN]` and the error.
+- **Regex, Presidio:** a zero `Regex` panicked on `Detect`; it now reads with the built-in
+  recognizers. A zero `Presidio` panicked on its nil HTTP client; it now uses `http.DefaultClient`
+  and reports the failed request.
+- **Regex:** the floor ignored its context: 4 MB with an already-cancelled context ran 2.5 s and
+  returned no error. It now stops between recognizers and between the as-given and normalized
+  reads, returning the spans found so far with the context's error, and the chain masks those spans
+  as well as reporting it. Callers should fail closed on any error. The floor now also honours
+  `DefaultTimeout`, which several megabytes of text can exceed (4 MB took 4.7 s on an Apple M5); set
+  `Chain.Timeout` higher for input that large.
+- **Allow list:** `support+billing@example.com` allow-listed for `EMAIL` came out as
+  `support+[EMAIL]`, because the `+`-as-space reading claimed `billing@example.com`, which is not
+  the allowed string. A claim of the same type wholly inside an allowed span is now dropped with it;
+  a different value beside the allowed term is still masked.
 - **Chain:** a span with offsets outside the text — from a custom detector — panicked a type guard,
   or merged with the floor's valid spans into a union `Mask` skipped, leaving all of them in the
   clear with no error. Such spans are now dropped and reported as that detector's error.

@@ -12,6 +12,7 @@ package piidetect
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -41,8 +42,13 @@ type Detector interface {
 
 // Chain runs engines in order (fast deterministic floor first), each under
 // its own timeout, and merges overlapping spans. Engine errors are collected,
-// not fatal — the caller decides what an error means (fail open or closed)
-// from the returned errors.
+// not fatal: the spans the other engines found, and those a failed engine
+// found before it stopped, are still returned. Any error means a value may
+// have been missed, so a caller handling regulated data should fail closed on
+// one — mask or drop the whole text — rather than send on the partial result.
+//
+// A Chain with no Detectors runs the built-in regex floor in their place and
+// reports ErrNoDetectors, so a zero Chain never returns text unredacted.
 type Chain struct {
 	Detectors []Detector
 	// Timeout bounds each detector on a Run; zero means DefaultTimeout.
@@ -122,19 +128,34 @@ func (c *Chain) allowed(typ, span string) bool {
 	return false
 }
 
+// ErrNoDetectors is reported by a Chain with no Detectors. Such a Chain runs
+// the built-in regex floor in their place rather than return text unredacted.
+var ErrNoDetectors = errors.New("piidetect: chain has no detectors; ran the built-in regex floor")
+
 // Run returns merged, guard-validated spans plus one error per failed engine.
+// On any error the spans may be incomplete; see Chain.
 //
 // A span with offsets outside text is dropped and reported as its engine's
 // error. Kept, it would panic in a type guard, or merge with valid neighbours
 // into a union Mask cannot apply — leaving all of them in the clear.
+//
+// A span the allow list suppresses also takes with it every span of the same
+// type inside it: a decoded reading of the allowed term (support+billing@…
+// read with '+' as a space) is the same characters, not another value. A span
+// that reaches outside it, or is of another type, stands.
 func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 	timeout := c.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	var all []Span
+	var all, allowed []Span
 	var errs []error
-	for _, d := range c.Detectors {
+	detectors := c.Detectors
+	if len(detectors) == 0 {
+		detectors = []Detector{NewRegex()}
+		errs = append(errs, ErrNoDetectors)
+	}
+	for _, d := range detectors {
 		dctx, cancel := context.WithTimeout(ctx, timeout)
 		var spans []Span
 		var err error
@@ -145,8 +166,8 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 		}
 		cancel()
 		if err != nil {
+			// Keep what it found before failing: masking more is the safe side.
 			errs = append(errs, fmt.Errorf("%s: %w", d.Name(), err))
-			continue
 		}
 		bad := 0
 		for _, sp := range spans {
@@ -161,6 +182,7 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 				continue
 			}
 			if c.allowed(sp.Type, text[sp.Start:sp.End]) {
+				allowed = append(allowed, sp)
 				continue
 			}
 			all = append(all, sp)
@@ -169,7 +191,26 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 			errs = append(errs, fmt.Errorf("%s: dropped %d span(s) with offsets outside the text", d.Name(), bad))
 		}
 	}
+	if len(allowed) > 0 {
+		kept := all[:0]
+		for _, sp := range all {
+			if !insideAny(sp, allowed) {
+				kept = append(kept, sp)
+			}
+		}
+		all = kept
+	}
 	return Merge(all), errs
+}
+
+// insideAny reports whether sp lies within a span of its own type in spans.
+func insideAny(sp Span, spans []Span) bool {
+	for _, a := range spans {
+		if a.Type == sp.Type && a.Start <= sp.Start && sp.End <= a.End {
+			return true
+		}
+	}
+	return false
 }
 
 // within reports whether sp is a non-empty span inside text.

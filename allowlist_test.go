@@ -119,3 +119,19 @@ func TestNoPackSuppressesNothing(t *testing.T) {
 		t.Errorf("a pack with no allow rules must not suppress, got %v", typesOf(got))
 	}
 }
+
+// The floor also reads '+' as a form-encoded space, which turns the allowed
+// support+billing@example.com into a second claim on billing@example.com. That
+// is the allowed term's own characters and goes with it; a different address
+// beside it does not.
+func TestAllowListPlusAddress(t *testing.T) {
+	c := New()
+	c.SetPatternPack([]PatternRule{{ID: "a1", Type: "EMAIL", Kind: "allow_list", AllowList: []string{"support+billing@example.com"}}})
+	clean, errs := c.Redact(context.Background(), "support+billing@example.com cc jane.doe@example.org")
+	if len(errs) != 0 {
+		t.Fatalf("errors: %v", errs)
+	}
+	if want := "support+billing@example.com cc [EMAIL]"; clean != want {
+		t.Errorf("got  %q\nwant %q", clean, want)
+	}
+}

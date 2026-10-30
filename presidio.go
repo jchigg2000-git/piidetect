@@ -83,8 +83,17 @@ type presidioResult struct {
 	Score      float64 `json:"score"`
 }
 
+// Detect asks the sidecar for spans. A zero Presidio carries no pack and uses
+// http.DefaultClient; with no URL its requests fail and say so.
 func (p *Presidio) Detect(ctx context.Context, text string) ([]Span, error) {
 	pack := p.pack.Load()
+	if pack == nil {
+		pack = &compiledPack{}
+	}
+	client := p.http
+	if client == nil {
+		client = http.DefaultClient
+	}
 
 	// The request-level threshold must sit at the lowest gate so a lowered
 	// per-type gate actually receives candidates; everything else is
@@ -112,7 +121,7 @@ func (p *Presidio) Detect(ctx context.Context, text string) ([]Span, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := p.http.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

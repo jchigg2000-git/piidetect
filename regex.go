@@ -244,6 +244,12 @@ func (r *Regex) SetPatternPack(rules []PatternRule) error {
 
 // Detect returns the recognizers' hits merged, so they can go straight to
 // Mask. A Chain uses detectRaw instead: see rawDetector.
+//
+// A zero Regex reads with the built-in recognizers, as NewRegex does. Detect
+// stops between recognizers once ctx is done and returns the hits found so far
+// with ctx's error. Those are not every value in text: a caller must treat an
+// error as failure (mask the whole text, or drop it), not send on what Mask
+// makes of a partial result.
 func (r *Regex) Detect(ctx context.Context, text string) ([]Span, error) {
 	spans, err := r.detectRaw(ctx, text)
 	return Merge(spans), err
@@ -256,9 +262,12 @@ func (r *Regex) Detect(ctx context.Context, text string) ([]Span, error) {
 // decoded characters — then mapped back to the offsets of the text as given
 // and marked checked, so the chain does not judge it a second time against
 // escapes it cannot read.
-func (r *Regex) detectRaw(_ context.Context, text string) ([]Span, error) {
-	recs := *r.compiled.Load()
-	spans := scan(recs, text)
+func (r *Regex) detectRaw(ctx context.Context, text string) ([]Span, error) {
+	recs := builtins
+	if p := r.compiled.Load(); p != nil {
+		recs = *p
+	}
+	spans := scan(ctx, recs, text)
 	// Read as given, "Email:\njane.doe@example.org" holds the address
 	// njane.doe@example.org. The value starts after the escape, and a span
 	// that keeps its letter would mask it away: "Email:\[EMAIL]".
@@ -269,8 +278,11 @@ func (r *Regex) detectRaw(_ context.Context, text string) ([]Span, error) {
 		}
 	}
 	spans = kept
+	if err := ctx.Err(); err != nil {
+		return spans, err
+	}
 	if dec, orig, ok := normalizedView(text); ok {
-		for _, sp := range scan(recs, dec) {
+		for _, sp := range scan(ctx, recs, dec) {
 			if guard, has := typeGuards[sp.Type]; has && !guard(dec, sp.Start, sp.End) {
 				continue
 			}
@@ -278,7 +290,7 @@ func (r *Regex) detectRaw(_ context.Context, text string) ([]Span, error) {
 			spans = append(spans, sp)
 		}
 	}
-	return spans, nil
+	return spans, ctx.Err()
 }
 
 // pastEscape returns start, or the end of the JSON string escape whose
@@ -301,10 +313,14 @@ func pastEscape(text string, start int) int {
 	return start
 }
 
-// scan returns every validated hit of recs in text, unmerged.
-func scan(recs []recognizer, text string) []Span {
+// scan returns every validated hit of recs in text, unmerged. It stops before
+// the next recognizer once ctx is done; the caller checks ctx.Err().
+func scan(ctx context.Context, recs []recognizer, text string) []Span {
 	var spans []Span
 	for _, rec := range recs {
+		if ctx.Err() != nil {
+			break
+		}
 		for _, loc := range rec.hits(text) {
 			start, end := loc[0], loc[1]
 			if rec.validate != nil && !rec.validate(text, start, end) {
