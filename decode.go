@@ -7,8 +7,10 @@ import (
 )
 
 // Values arrive percent-encoded in a URL query or a form body
-// (jane.doe%40example.org, 4111+1111+1111+1111, DOB%3A%203%2F14%2F1985),
-// JSON-escaped in a logged body ("Email:\njane.doe@example.org", 03\/14\/1985,
+// (jane.doe%40example.org, 4111+1111+1111+1111, DOB%3A%203%2F14%2F1985), or
+// twice when a URL rides in another's value (jane.doe%2540example.org),
+// HTML-escaped in a page or template (jane&#64;example.org,
+// 4111&nbsp;1111&nbsp;1111&nbsp;1111, &lt;dob&gt;3/14/1985), JSON-escaped in a logged body ("Email:\njane.doe@example.org", 03\/14\/1985,
 // m\u00fcller@example.de, a whole body escaped into one string field), and
 // with Unicode look-alikes of ASCII punctuation in pasted documents
 // (219–09–9999 with en dashes, a card number's non-breaking spaces). The
@@ -17,8 +19,11 @@ import (
 
 // normalizedView returns text as the recognizers should also read it: with
 // every JSON string escape decoded (\n \r \t \/ \" \\ and \uXXXX, surrogate
-// pairs included), then every valid %XX escape replaced by its byte and every
-// '+' by a space, as a query string or form body is decoded, and then with the
+// pairs included), then every HTML character reference htmlEntity reads
+// (&#64; &#x40; and a few named ones: &nbsp; &ndash; &lt; …), then every valid
+// %XX escape replaced by its byte and every '+' by a space, as a query string
+// or form body is decoded, again while a %XX escape remains (a value encoded
+// twice, jane.doe%2540example.org, up to percentRounds deep), and then with the
 // look-alikes of ASCII punctuation folded onto it, which are what a document
 // pasted from a word processor or PDF carries: the Unicode dashes that stand
 // for a hyphen (U+2010–U+2013, U+2212; not the em dash, which is a sentence's
@@ -28,26 +33,38 @@ import (
 // invisible characters (zero-width space and joiners, soft hyphen, word joiner,
 // BOM) dropped; fold has the full list.
 //
+// The stages run from the outermost encoding in: a logged JSON body carries
+// HTML, an HTML attribute carries a URL, and a URL's value carries the
+// characters folding reads (&ndash; and %E2%80%93 both become the en dash
+// that folds to a hyphen).
+//
 // orig[i] is the offset in text at which view byte i begins (orig[len(view)] is
 // len(text)), so a span found in the view can be mapped back. ok is false, and
-// nothing is allocated, unless text holds a JSON or %XX escape, a '+' between
-// two letters or digits (the shape of a form-encoded space), or a character to
-// fold; that keeps the second pass off ordinary text.
+// nothing is allocated, unless text holds a JSON escape, an HTML character
+// reference, a %XX escape, a '+' between two letters or digits (the shape of a
+// form-encoded space), or a character to fold; that keeps the second pass off
+// ordinary text.
 func normalizedView(text string) (view string, orig []int, ok bool) {
 	view = text
-	for _, stage := range [...]func(string) (string, []int, bool){jsonUnescaped, percentDecoded, folded} {
+	for _, stage := range [...]func(string) (string, []int, bool){jsonUnescaped, htmlUnescaped, percentDecodedAll, folded} {
 		s, o, done := stage(view)
 		if !done {
 			continue
 		}
-		if orig != nil { // o indexes the previous view; orig maps that onto text
-			for i, at := range o {
-				o[i] = orig[at]
-			}
-		}
-		view, orig, ok = s, o, true
+		view, orig, ok = s, composed(o, orig), true
 	}
 	return view, orig, ok
+}
+
+// composed maps o, which indexes the previous view, onto the text that view was
+// read from, through that view's orig (nil when it is the text itself).
+func composed(o, orig []int) []int {
+	if orig != nil {
+		for i, at := range o {
+			o[i] = orig[at]
+		}
+	}
+	return o
 }
 
 // folded is s with each look-alike fold maps replaced by its ASCII original,
@@ -164,6 +181,116 @@ func hex4(text string, i int) (rune, bool) {
 	return r, true
 }
 
+// htmlUnescaped is text with each HTML character reference htmlEntity reads
+// replaced by its character as UTF-8, every byte of which maps to the
+// reference, plus orig as for normalizedView. Read left to right, &amp; is
+// consumed whole, so &amp;#64; is an ampersand and #64;, not an @. ok is false,
+// and nothing is allocated, when text has none.
+func htmlUnescaped(text string) (dec string, orig []int, ok bool) {
+	for i := 0; i < len(text) && !ok; i++ {
+		if text[i] == '&' {
+			_, n := htmlEntity(text, i)
+			ok = n > 0
+		}
+	}
+	if !ok {
+		return "", nil, false
+	}
+	b := make([]byte, 0, len(text))
+	orig = make([]int, 0, len(text)+1)
+	for i := 0; i < len(text); {
+		r, n := htmlEntity(text, i)
+		if n == 0 {
+			b = append(b, text[i])
+			orig = append(orig, i)
+			i++
+			continue
+		}
+		before := len(b)
+		b = utf8.AppendRune(b, r)
+		for range len(b) - before {
+			orig = append(orig, i)
+		}
+		i += n
+	}
+	return string(b), append(orig, len(text)), true
+}
+
+// htmlEntity decodes the HTML character reference at text[i:], returning the
+// character and the reference's length, or n == 0 when none starts there. It
+// reads numeric references, decimal and hex (&#64; &#x40;), and the named ones
+// that stand for a value's separators or a markup label's brackets: &nbsp;
+// &ndash; &minus; &hyphen; &commat; &period; &lt; &gt; &amp; &quot;. The
+// closing ';' is required: without it, &#64 would run on into the digits
+// after it.
+func htmlEntity(text string, i int) (r rune, n int) {
+	if text[i] != '&' {
+		return 0, 0
+	}
+	end := i + 1
+	for end < len(text) && end-i < 12 && text[end] != ';' {
+		end++
+	}
+	if end >= len(text) || text[end] != ';' || end == i+1 {
+		return 0, 0
+	}
+	switch name := text[i+1 : end]; name {
+	case "nbsp":
+		r = ' '
+	case "ndash":
+		r = '–'
+	case "minus":
+		r = '−'
+	case "hyphen":
+		r = '‐'
+	case "commat":
+		r = '@'
+	case "period":
+		r = '.'
+	case "lt":
+		r = '<'
+	case "gt":
+		r = '>'
+	case "amp":
+		r = '&'
+	case "quot":
+		r = '"'
+	default:
+		var ok bool
+		if r, ok = charRef(name); !ok {
+			return 0, 0
+		}
+	}
+	return r, end + 1 - i
+}
+
+// charRef reads a numeric character reference's name: # then decimal digits
+// (#64) or x and hex digits (#x40, #X40). NUL, a surrogate and anything past
+// U+10FFFF are not characters.
+func charRef(name string) (rune, bool) {
+	if len(name) < 2 || name[0] != '#' {
+		return 0, false
+	}
+	digits, base := name[1:], rune(10)
+	if digits[0] == 'x' || digits[0] == 'X' {
+		digits, base = digits[1:], 16
+	}
+	if digits == "" {
+		return 0, false
+	}
+	var r rune
+	for k := 0; k < len(digits); k++ {
+		c := digits[k]
+		if !isDigit(c) && (base == 10 || !isHex(c)) {
+			return 0, false
+		}
+		if r = r*base + rune(unhex(c)); r > unicode.MaxRune {
+			return 0, false
+		}
+	}
+	return r, r != 0 && utf8.ValidRune(r)
+}
+
 // hasFoldable reports whether s holds a character that fold maps.
 func hasFoldable(s string) bool {
 	for i := 0; i < len(s); {
@@ -246,16 +373,39 @@ func firstRune(s string) rune {
 	return r
 }
 
-// percentDecoded is text with each valid %XX escape replaced by its byte and
-// each '+' by a space, plus orig as for normalizedView. ok is false, and nothing
-// is allocated, when text has neither.
-func percentDecoded(text string) (dec string, orig []int, ok bool) {
+// percentRounds is how many times percentDecodedAll decodes: a value encoded
+// twice (jane.doe%2540example.org), or a URL inside a URL's value encoded once
+// more (redirect=…%3Fssn%3D219%252D09%252D9999), and one level past that.
+const percentRounds = 3
+
+// percentDecodedAll is percentDecoded, then each valid %XX escape the result
+// still holds decoded again, up to percentRounds in all, plus orig as for
+// normalizedView. Only the first round reads '+' as a space: a '+' a later
+// round finds came from a %2B, which is a plus. ok is false, and nothing is
+// allocated, when text has neither an escape nor a form-encoded space.
+func percentDecodedAll(text string) (dec string, orig []int, ok bool) {
+	dec, orig, ok = percentDecoded(text, true)
+	for round := 1; ok && round < percentRounds; round++ {
+		d, o, more := percentDecoded(dec, false)
+		if !more {
+			break
+		}
+		dec, orig = d, composed(o, orig)
+	}
+	return dec, orig, ok
+}
+
+// percentDecoded is text with each valid %XX escape replaced by its byte and,
+// when plus is set, each '+' by a space, plus orig as for normalizedView. ok is
+// false, and nothing is allocated, when text has neither (a '+' counts only
+// between two letters or digits).
+func percentDecoded(text string, plus bool) (dec string, orig []int, ok bool) {
 	for i := 0; i < len(text) && !ok; i++ {
 		switch text[i] {
 		case '%':
 			ok = isEscape(text, i)
 		case '+':
-			ok = i > 0 && i+1 < len(text) && isAlnum(text[i-1]) && isAlnum(text[i+1])
+			ok = plus && i > 0 && i+1 < len(text) && isAlnum(text[i-1]) && isAlnum(text[i+1])
 		}
 	}
 	if !ok {
@@ -269,7 +419,7 @@ func percentDecoded(text string) (dec string, orig []int, ok bool) {
 		case isEscape(text, i):
 			b = append(b, unhex(text[i+1])<<4|unhex(text[i+2]))
 			i += 3
-		case text[i] == '+':
+		case plus && text[i] == '+':
 			b = append(b, ' ')
 			i++
 		default:

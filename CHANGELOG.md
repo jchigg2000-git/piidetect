@@ -124,6 +124,17 @@
   folding, and a span read as given never starts on an escape's letter, so `Mask` keeps the JSON
   valid. `\\n` is a backslash and an `n`; text with no backslash escape is still read once.
 
+- **All types:** values behind HTML character references or percent-encoded twice went out in the
+  clear: `jane&#64;example.org`, `jane&#x40;example.org`, `4111&nbsp;1111&nbsp;1111&nbsp;1111`,
+  `219&ndash;09&ndash;9999`, `&lt;dob&gt;3/14/1985&lt;/dob&gt;`, `?email=jane.doe%2540example.org`
+  and a `redirect=` URL carrying `ssn%3D219%252D09%252D9999`. The normalized text now decodes
+  numeric references and `&nbsp; &ndash; &minus; &hyphen; &commat; &period; &lt; &gt; &amp;
+  &quot;` (the `;` required) after JSON escapes and before percent-decoding, so `&ndash;` reaches
+  folding as an en dash, and percent-decodes again while a `%XX` remains, up to three rounds. Only
+  the first round reads `+` as a space, so a literal `%25` elsewhere cannot turn
+  `sum=219%2B09%2B9999` into an SSN. Spans cover the whole reference or escape; text with no `&`
+  reference and no escape is still read once, with no allocation.
+
 ### Fewer false positives
 
 - **CREDIT_CARD:** one in ten long numbers passes Luhn, and logs are full of them: epoch

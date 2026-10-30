@@ -55,19 +55,25 @@ checks belong to the regex floor's own recognizers:
 | `MRN` | the `MRN`, `Medical Record`, `Med Rec` or `MR#` label, optionally followed by `is` or `was`, then 6–10 digits, optionally after a one- or two-letter prefix or joined by single hyphens (`MRN: E1234567`, `MRN: 12-345-678`; no spaces inside the value): `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MR#: 1234567`, `MRN is 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567`, `Medical Record Number: 1234567`, `"medicalRecordNumber": "1234567"` | the label must start a word or a camelCase hump; `MR` needs its `#`, so the title `Mr` never counts; a line break is crossed only after a separator |
 | `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `patientDob`, `date of birth`, `born`, `birthDate`, `<dob>`, `<birthDate value="…">`, any of them optionally followed by `is` or `was`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, ISO with a time and zone (`1985-03-14T00:00:00Z`, `1985-03-14 00:00:00`, masked whole), compact `YYYYMMDD` (`19850314`), and month names (`14-Mar-1985`, `14th March 1985`) | month 01–12, day 01–31 (range only, not calendar-aware); unlabelled, not followed by a clock time or one end of a date range; the label for the other forms |
 
-Text that carries JSON string escapes, percent-encoding or look-alike punctuation is read twice, as
-given and normalized: JSON escapes are decoded, so a value in a logged body is read as the string it
-encodes (`"Email:\njane.doe@example.org"`, `03\/14\/1985`, `m\u00fcller@example.de`,
-`{"body":"{\"ssn\":\"078051120\"}"}`; `\\n` stays a backslash and an `n`), `%XX` escapes are
-decoded, `+` between letters or digits is a space (query strings and form bodies:
-`mailto:jane.doe%40example.org`, `card=4111+1111+1111+1111`, `q=DOB%3A%203%2F14%2F1985`), and what a
+Text that carries JSON string escapes, HTML character references, percent-encoding or look-alike
+punctuation is read twice, as given and normalized: JSON escapes are decoded, so a value in a logged
+body is read as the string it encodes (`"Email:\njane.doe@example.org"`, `03\/14\/1985`,
+`m\u00fcller@example.de`, `{"body":"{\"ssn\":\"078051120\"}"}`; `\\n` stays a backslash and an
+`n`), then HTML character references with their `;` (`jane&#64;example.org`, `&#x40;`, and
+`&nbsp; &ndash; &minus; &hyphen; &commat; &period; &lt; &gt; &amp; &quot;`, so
+`4111&nbsp;1111&nbsp;1111&nbsp;1111` and `&lt;dob&gt;3/14/1985` are read; `&amp;#64;` stays an
+ampersand and `#64;`), then `%XX` escapes, with `+` between letters or digits a space (query
+strings and form bodies: `mailto:jane.doe%40example.org`, `card=4111+1111+1111+1111`,
+`q=DOB%3A%203%2F14%2F1985`), decoded again while an escape remains, up to three rounds
+(`jane.doe%2540example.org`, a `redirect=` URL's own `ssn%3D219%252D09%252D9999`), and what a
 document pasted from a word processor or PDF carries is folded onto ASCII: the Unicode dashes that
 stand for a hyphen (`219–09–9999`, `415‑555‑0173`), non-breaking, thin and ideographic spaces
 (`4111 1111 1111 1111`), fullwidth forms (`ＳＳＮ：２１９－０９－９９９９`), and the digits of other scripts
 (`٢١٩-٠٩-٩٩٩٩`, `४१५-५५५-०१७३`). Zero-width characters and soft hyphens are dropped, so a value they
 split (`jane.<U+200B>doe@example.org`) is read whole. Spans are mapped back onto the text as given,
 so `Mask` replaces the whole value. The price is that a `+` is a space there: `123+45+6789` reads
-as an SSN, and a backslash before a letter is an escape there: in a Windows path
+as an SSN; a literal `%` written `%25` before two hex digits is decoded again (`100%2540` reads
+`100@`); and a backslash before a letter is an escape there: in a Windows path
 (`C:\temp\nancy@example.org`) the `n` stays and `ancy@example.org` is masked. Text with none of
 these is read once.
 
@@ -174,10 +180,12 @@ Stated plainly, because the failure mode of a redaction library is silent under-
   punctuation, and `219—09—9999` stays.
 - **Base64, quoted-printable and line-wrapped values** (`amFuZS5kb2VAZXhhbXBsZS5vcmc=`,
   `jane.doe=40example.org`, a number split across a line break) are not decoded or joined.
-- **Doubly encoded values and HTML entities** (`jane.doe%2540example.org`, `jane&#64;example.org`)
-  are not decoded. Single percent-encoding, form-encoded spaces and JSON string escapes are; see
-  above, JSON escapes one level deep: a body escaped twice (`{\\\"ssn\\\":…}`) is not read. The
-  Presidio tier reads the text as given.
+- **HTML entities past a short list, and encodings past their depth** are not decoded: named
+  references other than the ten above (`&copy;`, `&apos;`), a reference without its `;`
+  (`jane&#64example.org`), a value percent-encoded four times, and JSON escapes past one level (a
+  body escaped twice, `{\\\"ssn\\\":…}`). A `+` that a second percent round finds came from `%2B`
+  and stays a plus, so a form space encoded twice (`ssn%3D219%2B09%2B9999`) is not a space.
+  The Presidio tier reads the text as given.
 - **Email addresses written in scripts without spaces** (Chinese, Japanese, Thai) are not matched
   in those scripts: the address would absorb the words around it. ASCII addresses inside such
   text are.

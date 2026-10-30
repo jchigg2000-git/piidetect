@@ -203,3 +203,40 @@ func TestRedactJSONEscapedValues(t *testing.T) {
 		}
 	}
 }
+
+// HTML character references and a value percent-encoded twice hide it from
+// both the text as given and a single decode; each must be masked whole, over
+// the reference or escape text, and a %2B a later round finds stays a plus.
+func TestRedactEntitiesAndDoubleEncoding(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"mail jane&#64;example.org now", "mail [EMAIL] now"},
+		{"mail jane&#x40;example.org now", "mail [EMAIL] now"},
+		{"mail jane&commat;example&period;org now", "mail [EMAIL] now"},
+		{"Card 4111&nbsp;1111&nbsp;1111&nbsp;1111 ok", "Card [CREDIT_CARD] ok"},
+		{"SSN 219&ndash;09&ndash;9999 ok", "SSN [SSN] ok"},
+		{"&lt;dob&gt;3/14/1985&lt;/dob&gt;", "&lt;dob&gt;[DOB]&lt;/dob&gt;"},
+		{"{&quot;ssn&quot;:&quot;078051120&quot;}", "{&quot;ssn&quot;:&quot;[SSN]&quot;}"},
+		{"?email=jane.doe%2540example.org&x=1", "?email=[EMAIL]&x=1"},
+		{"redirect=https%3A%2F%2Fapp.example%2Fcb%3Fssn%3D219%252D09%252D9999", "redirect=https%3A%2F%2Fapp.example%2Fcb%3Fssn%3D[SSN]"},
+		{"?email=jane.doe%252540example.org", "?email=[EMAIL]"},
+		// Without its ';' a reference is not read; &amp; is consumed whole.
+		{"mail jane&#64example.org and jane&amp;#64;example.org", "mail jane&#64example.org and jane&amp;#64;example.org"},
+		{"Order ORD&ndash;123&ndash;45&ndash;6789 shipped", "Order ORD&ndash;123&ndash;45&ndash;6789 shipped"},
+		{"ref=ORD%252D123%252D45%252D6789", "ref=ORD%252D123%252D45%252D6789"},
+		// A literal %25 starts a second round; the plus from %2B stays a plus.
+		{"sum=219%2B09%2B9999&load=12%2520", "sum=219%2B09%2B9999&load=12%2520"},
+	} {
+		if got, _ := New().Redact(context.Background(), c.in); got != c.want {
+			t.Errorf("Redact(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	for _, plain := range []string{"Tom & Jerry", "a&b;c", "&#;", "&#x;", "&#0;", "&#xD800;", "&copy; 2026", "R&D; Q&A"} {
+		if _, _, ok := normalizedView(plain); ok {
+			t.Errorf("normalizedView(%q) = ok, want no view", plain)
+		}
+	}
+	// a  &#x40;  b  %2540  c: each decoded byte maps to its whole reference or escape.
+	if view, orig, ok := normalizedView("a&#x40;b%2540c"); !ok || view != "a@b@c" || orig[1] != 1 || orig[2] != 7 || orig[3] != 8 || orig[4] != 13 || orig[5] != 14 {
+		t.Errorf("normalizedView = %q %v %v", view, orig, ok)
+	}
+}
