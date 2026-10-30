@@ -60,9 +60,11 @@ Text that carries percent-encoding or look-alike punctuation is read twice, as g
 `mailto:jane.doe%40example.org`, `card=4111+1111+1111+1111`, `q=DOB%3A%203%2F14%2F1985`), and what a
 document pasted from a word processor or PDF carries is folded onto ASCII: the Unicode dashes that
 stand for a hyphen (`219–09–9999`, `415‑555‑0173`), non-breaking, thin and ideographic spaces
-(`4111 1111 1111 1111`), and fullwidth forms (`ＳＳＮ：２１９－０９－９９９９`). Spans are mapped back onto the
-text as given, so `Mask` replaces the whole value. The price is that a `+` is a space there:
-`123+45+6789` reads as an SSN. Text with none of these is read once.
+(`4111 1111 1111 1111`), fullwidth forms (`ＳＳＮ：２１９－０９－９９９９`), and the digits of other scripts
+(`٢١٩-٠٩-٩٩٩٩`, `४१५-५५५-०१७३`). Zero-width characters and soft hyphens are dropped, so a value they
+split (`jane.<U+200B>doe@example.org`) is read whole. Spans are mapped back onto the text as given,
+so `Mask` replaces the whole value. The price is that a `+` is a space there: `123+45+6789` reads
+as an SSN. Text with none of these is read once.
 
 So these are left alone:
 
@@ -132,9 +134,10 @@ Stated plainly, because the failure mode of a redaction library is silent under-
 - **Bare 10-digit phone numbers** (`4155550173`) are not matched unless a phone label sits right
   before them, for the same reason as bare SSNs. As for MRN, a label's value on the next line is
   claimed only after a separator.
-- **Other look-alikes** are not folded: the em dash (it is a sentence's punctuation, and
-  `219—09—9999` stays), zero-width characters and soft hyphens inside a number, and non-Latin digits
-  (Arabic-Indic, Devanagari).
+- **The em dash and the horizontal bar** (U+2014, U+2015) are not folded: they are a sentence's
+  punctuation, and `219—09—9999` stays.
+- **Base64, quoted-printable and line-wrapped values** (`amFuZS5kb2VAZXhhbXBsZS5vcmc=`,
+  `jane.doe=40example.org`, a number split across a line break) are not decoded or joined.
 - **Doubly encoded values, HTML entities and JSON `\u` escapes** (`jane.doe%2540example.org`,
   `jane&#64;example.org`, `jane\u0040example.org`) are not decoded. Single percent-encoding and
   form-encoded spaces are; see above. The Presidio tier reads the text as given.

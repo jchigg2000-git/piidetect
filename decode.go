@@ -44,16 +44,16 @@ func normalizedView(text string) (view string, orig []int, ok bool) {
 	b := make([]byte, 0, len(s))
 	orig = make([]int, 0, len(s)+1)
 	for i := 0; i < len(s); {
-		r, n := utf8.DecodeRuneInString(s[i:])
-		if f, ok := fold(r); ok && n > 1 {
+		f, n, ok := fold(s, i)
+		switch {
+		case !ok:
+			for k := 0; k < n; k++ {
+				b = append(b, s[i+k])
+				orig = append(orig, at(i+k))
+			}
+		case f != dropped:
 			b = append(b, f)
 			orig = append(orig, at(i))
-			i += n
-			continue
-		}
-		for k := 0; k < n; k++ {
-			b = append(b, s[i+k])
-			orig = append(orig, at(i+k))
 		}
 		i += n
 	}
@@ -67,8 +67,8 @@ func hasFoldable(s string) bool {
 			i++
 			continue
 		}
-		r, n := utf8.DecodeRuneInString(s[i:])
-		if _, ok := fold(r); ok {
+		_, n, ok := fold(s, i)
+		if ok {
 			return true
 		}
 		i += n
@@ -76,17 +76,70 @@ func hasFoldable(s string) bool {
 	return false
 }
 
-// fold maps a non-ASCII character to the ASCII one it stands for.
-func fold(r rune) (byte, bool) {
+// dropped is what fold maps an invisible character to: it gets no byte in the
+// view, so a span read across it still covers it in the text as given.
+const dropped byte = 0
+
+// fold maps the non-ASCII character at s[i:], n bytes long, to the ASCII one
+// it stands for, or to dropped. ok is false for ASCII and for a character that
+// stands for nothing else.
+func fold(s string, i int) (f byte, n int, ok bool) {
+	if s[i] < utf8.RuneSelf {
+		return 0, 1, false
+	}
+	r, n := utf8.DecodeRuneInString(s[i:])
 	switch {
 	case r >= 0xFF01 && r <= 0xFF5E: // fullwidth forms, including －
-		return byte(r - 0xFEE0), true
+		return byte(r - 0xFEE0), n, true
 	case r >= 0x2010 && r <= 0x2013, r == 0x2212, r == 0xFE58, r == 0xFE63:
-		return '-', true
+		return '-', n, true
+	// The katakana prolonged sound mark and the hyphen bullet are a hyphen
+	// only inside a number (219ー09ー9999); in words they are themselves.
+	case r == 0x30FC, r == 0x2043:
+		return '-', n, unicode.IsDigit(lastRune(s[:i])) && unicode.IsDigit(firstRune(s[i+n:]))
+	case r == 0xFE6B: // small commercial at
+		return '@', n, true
+	// Soft hyphen, zero-width space, non-joiner and joiner, word joiner and
+	// byte-order mark: invisible, and inside a value they hide it.
+	case r == 0x00AD, r >= 0x200B && r <= 0x200D, r == 0x2060, r == 0xFEFF:
+		return dropped, n, true
 	case unicode.Is(unicode.Zs, r):
-		return ' ', true
+		return ' ', n, true
+	}
+	if d, ok := digitValue(r); ok {
+		return '0' + d, n, true
+	}
+	return 0, n, false
+}
+
+// digitValue is the value of a decimal digit in any script (Arabic-Indic ٣,
+// Persian ۳, Devanagari ३). Unicode encodes each script's digits as one run
+// from 0 to 9, and unicode.Nd lists them in whole runs.
+func digitValue(r rune) (byte, bool) {
+	if !unicode.IsDigit(r) {
+		return 0, false
+	}
+	for _, rg := range unicode.Nd.R16 {
+		if r >= rune(rg.Lo) && r <= rune(rg.Hi) {
+			return byte((r - rune(rg.Lo)) % 10), true
+		}
+	}
+	for _, rg := range unicode.Nd.R32 {
+		if r >= rune(rg.Lo) && r <= rune(rg.Hi) {
+			return byte((r - rune(rg.Lo)) % 10), true
+		}
 	}
 	return 0, false
+}
+
+func lastRune(s string) rune {
+	r, _ := utf8.DecodeLastRuneInString(s)
+	return r
+}
+
+func firstRune(s string) rune {
+	r, _ := utf8.DecodeRuneInString(s)
+	return r
 }
 
 // percentDecoded is text with each valid %XX escape replaced by its byte and

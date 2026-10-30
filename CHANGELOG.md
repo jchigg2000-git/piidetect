@@ -61,6 +61,15 @@
   text is read as well as the original and spans are mapped back; the em dash is not folded, so
   `219—09—9999` and `ORD–123–45–6789` stay unclaimed.
 
+- **All types:** a zero-width space, joiner or soft hyphen inside a value hid it or split it, so
+  `jane.<U+200B>doe@example.org` came out `jane.<U+200B>[EMAIL]`, and `4111<U+00AD>1111…` and
+  `219<U+200B>-09-9999` went out in the clear. Digits of other scripts (`SSN ٢١٩-٠٩-٩٩٩٩`,
+  `۲۱۹-۰۹-۹۹۹۹`, `Phone: ४१५-५५५-०१७३`), the small `﹫` and a katakana `ー` between digits
+  (`219ー09ー9999`) were missed. Invisible characters (U+00AD, U+200B–U+200D, U+2060, U+FEFF) are
+  now dropped from the normalized text, every Unicode decimal digit reads as its ASCII digit, and
+  `ー` and the hyphen bullet `⁃` read as a hyphen between digits only. The em dash and U+2015 are
+  still not folded.
+
 ### Fewer false positives
 
 - **CREDIT_CARD:** one in ten long numbers passes Luhn, and logs are full of them: epoch

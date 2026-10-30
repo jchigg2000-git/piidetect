@@ -129,3 +129,36 @@ func TestRedactUnicodeLookalikes(t *testing.T) {
 		}
 	}
 }
+
+// Invisible characters inside a value, digits of other scripts and the rarer
+// look-alikes hide it from a reader of the text as given; the value must still
+// be masked whole, and a mark that is a hyphen only inside a number stays
+// itself in words.
+func TestRedactInvisiblesAndScriptDigits(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"mail jane.\u200bdoe@example.org now", "mail [EMAIL] now"},
+		{"mail jane.doe@example.or\u200bg now", "mail [EMAIL] now"},
+		{"SSN 219\u200b-09-9999 ok", "SSN [SSN] ok"},
+		{"Card 4111\u00ad1111\u00ad1111\u00ad1111 ok", "Card [CREDIT_CARD] ok"},
+		{"Tel 415-555-01\u200d73 ok", "Tel [PHONE] ok"},
+		{"SSN 21\u20609-09-9999 ok", "SSN [SSN] ok"},
+		{"\ufeffSSN 219-09-99\u200c99 ok", "\ufeffSSN [SSN] ok"},
+		{"SSN ٢١٩-٠٩-٩٩٩٩ ok", "SSN [SSN] ok"},
+		{"SSN ۲۱۹-۰۹-۹۹۹۹ ok", "SSN [SSN] ok"},
+		{"Phone: ४१५-५५५-०१७३ ok", "Phone: [PHONE] ok"},
+		{"mail jane.doe﹫example.org now", "mail [EMAIL] now"},
+		{"SSN 219ー09ー9999 ok", "SSN [SSN] ok"},
+		{"SSN 219⁃09⁃9999 ok", "SSN [SSN] ok"},
+		{"Order ORD-١٢٣-٤٥-٦٧٨٩ shipped", "Order ORD-١٢٣-٤٥-٦٧٨٩ shipped"},
+		{"219—09—9999 and 219―09―9999", "219—09—9999 and 219―09―9999"},
+	} {
+		if got, _ := New().Redact(context.Background(), c.in); got != c.want {
+			t.Errorf("Redact(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+	// A dropped character has no byte in the view, and the sound mark is a
+	// hyphen only between digits.
+	if view, orig, ok := normalizedView("a\u00adb ー ٣ー٤"); !ok || view != "ab ー 3-4" || orig[1] != 3 {
+		t.Errorf("normalizedView = %q %v %v", view, orig, ok)
+	}
+}
