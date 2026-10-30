@@ -18,6 +18,7 @@ import (
 func TestRegexCorpusFloors(t *testing.T) {
 	det := NewRegex()
 	score := map[string]*typeScore{}
+	var results []entryResult
 	for _, e := range loadCorpus(t) {
 		if !hasEngine(e, "regex") {
 			continue
@@ -26,9 +27,11 @@ func TestRegexCorpusFloors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", e.Name, err)
 		}
-		scoreRegexEntry(t, e, spans, score)
+		results = append(results, scoreRegexEntry(t, e, spans, score))
 	}
 	logScoreTable(t, "regex corpus, per type:", score)
+	logShapeTable(t, results)
+	writeCorpusResults(t, "regex", results)
 	for _, r := range builtinRecognizers() {
 		if s := score[r.typ]; s == nil || s.found+s.missed == 0 {
 			t.Errorf("built-in type %s has no marked value in the corpus", r.typ)
