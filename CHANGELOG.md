@@ -94,6 +94,19 @@
 - **SSN:** numbers the SSA never issues (area `000` or `666`, group `00`, serial `0000`).
 - **CREDIT_CARD:** four consecutive years in card layout (`visits 2023 2024 2025 2026`), one run
   in five of which passes Luhn.
+- **IP:** Chrome's User-Agent version (`Chrome/120.0.0.0`) was masked as an address on nearly every
+  request log. A dotted quad right after a `Name/` product token that starts at a space, `(` or
+  the start of the text is a version; one in a URL path (`/api/clients/10.1.2.3`) is still an
+  address. The guard applies to every engine's claims.
+- **DOB:** an unlabelled `MM/DD/YYYY` followed by a clock time (`10/22/2026 14:30:17 INFO …`), or at
+  either end of a range joined by `-`, `to`, `and`, `through` or `until` (`between 01/01/2026 and
+  06/30/2026`). A date after a birth label is claimed as before, time or not.
+- **PHONE:** signed counters and offsets (`delta=+1500000000`, `offset +1048576000`,
+  `+1727049600007`) were claimed as E.164. A `+1` number must now be exactly ten digits after the
+  `+1` and pass the NANP check; other country codes are unchanged.
+- **EMAIL:** code: a method call (`y = A@np.linalg.inv(B)`) and an SSH or scp remote
+  (`git@github.com:org/repo.git`), whose `:` is followed, with no space, by a path holding a `/` or
+  ending `.git`. An address that ends a clause (`email jane@example.org: call her`) still counts.
 
 ## v0.1.1 — 2026-09-23
 

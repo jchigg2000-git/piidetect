@@ -102,8 +102,12 @@ func builtinRecognizers() []recognizer {
 			validate: func(text string, start, end int) bool {
 				return nanpValid(text, start, end) && phoneCue(text, start, end)
 			}},
+		// E.164. A +1 number is NANP: exactly ten digits after the +1, passing
+		// nanpValid, so a signed counter (delta=+1500000000, +1727049600007)
+		// is not a phone.
 		{typ: "PHONE", confidence: 0.85,
-			re: regexp.MustCompile(`\+[1-9]\d{9,14}\b`)},
+			re:       regexp.MustCompile(`\+[1-9]\d{9,14}\b`),
+			validate: e164Valid},
 		// International numbers as printed: country code, a separator, then
 		// 8–12 national digits in any grouping, or a bracketed area code or
 		// trunk 0 and at least 6 more ("+55 (11) 91234-5678", "+44 (0)20 …").
@@ -146,8 +150,11 @@ func builtinRecognizers() []recognizer {
 		{typ: "MRN", confidence: 0.85,
 			re:       regexp.MustCompile(`(?i)(?:MRN|medical[\t\p{Zs}_-]*record|med\.?[\t\p{Zs}_-]*rec\.?)(?:[\t\p{Zs}_]*(?:#|No\.?|Num(?:ber)?))?["']?[\t\p{Zs}]*(?:[-:=#>]{1,2}[\t\p{Zs}]*(?:\r?\n[\t\p{Zs}]*)?)?["']?\d{6,10}\b`),
 			validate: mrnLabelStart},
+		// MM/DD/YYYY anywhere, except where it is plainly not a birth date: a
+		// log timestamp or one end of a date range (see dobNotEvent).
 		{typ: "DOB", confidence: 0.7,
-			re: regexp.MustCompile(`\b(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/(19|20)\d{2}\b`)},
+			re:       regexp.MustCompile(`\b(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/(19|20)\d{2}\b`),
+			validate: dobNotEvent},
 		// Dates of birth as people actually write them: unpadded, "-" or "."
 		// separators, day or month first, two-digit years, ISO, month names
 		// (14-Mar-1985, 14th March 1985).
@@ -174,8 +181,30 @@ var retinaAsset = regexp.MustCompile(`(?i)@[1-9]x\.(?:png|jpe?g|gif|webp|svg|avi
 // emailValid rejects the high-density-display asset names (logo@2x.png) that
 // HTML, CSS and build output are full of: the "domain" 2x.png has an image
 // extension for a TLD. Image extensions are not TLDs, so no address is lost.
+//
+// It also rejects the two shapes code gives an address: a method call
+// (A@np.linalg.inv(B), Python's matrix-multiply operator) and an SSH or scp
+// remote (git@github.com:org/repo.git). For the remote, the ":" must be
+// followed, with no space, by a path: a run holding a "/" or ending ".git".
+// An address that merely ends a clause ("email jane@example.org: call her",
+// "user=jane@example.org:login") is still an address.
 func emailValid(text string, start, end int) bool {
-	return !retinaAsset.MatchString(text[start:end])
+	if retinaAsset.MatchString(text[start:end]) {
+		return false
+	}
+	if end < len(text) && text[end] == '(' {
+		return false
+	}
+	if end+1 < len(text) && text[end] == ':' {
+		rest := text[end+1:]
+		if i := strings.IndexAny(rest, " \t\r\n\"'<>,;)"); i >= 0 {
+			rest = rest[:i]
+		}
+		if strings.Contains(rest, "/") || strings.HasSuffix(rest, ".git") {
+			return false
+		}
+	}
+	return true
 }
 
 // emailLetters are the scripts an email address is matched in; see EMAIL.
@@ -398,6 +427,17 @@ func nanpValid(text string, start, end int) bool {
 	return notHyphenAdjacent(text, start, end)
 }
 
+// e164Valid accepts any E.164 number outside NANP. Inside it (+1) the number
+// must be exactly ten digits after the +1 and pass nanpValid, so signed
+// counters and offsets (delta=+1500000000, +1048576000, +1727049600007) are
+// not phones.
+func e164Valid(text string, start, end int) bool {
+	if text[start+1] != '1' {
+		return true
+	}
+	return end-start == 12 && nanpValid(text, start, end)
+}
+
 // mrnLabelStart rejects an MRN label that is the tail of a longer word or
 // number (EMRN, SMRN). Underscore and punctuation are fine (patient_mrn), and
 // so is a camelCase hump (patientMrn, PatientMRN).
@@ -454,6 +494,37 @@ var phoneCues = []cue{
 func dobCue(text string, start, _ int) bool   { return labelledBy(text, start, dobCues) }
 func ssnCue(text string, start, _ int) bool   { return labelledBy(text, start, ssnCues) }
 func phoneCue(text string, start, _ int) bool { return labelledBy(text, start, phoneCues) }
+
+// A clock time right after a date ("10/22/2026 14:30:17", ISO's "T").
+var clockAfter = regexp.MustCompile(`^[ T]\d{1,2}:\d{2}`)
+
+// A date range: a connector, then another date on its far side.
+const rangeJoin = `(?:[\t ]*-{1,2}[\t ]*|[\t ]+(?:to|and|through|thru|until)[\t ]+)`
+const anyDate = `\d{1,4}[-/.]\d{1,2}[-/.]\d{2,4}`
+
+var (
+	rangeAfter  = regexp.MustCompile(`(?i)^` + rangeJoin + anyDate + `\b`)
+	rangeBefore = regexp.MustCompile(`(?i)\b` + anyDate + rangeJoin + `$`)
+)
+
+// dobNotEvent accepts an unlabelled MM/DD/YYYY unless it is plainly the date of
+// an event: followed by a clock time (a log timestamp), or one end of a range
+// ("between 01/01/2026 and 06/30/2026", "01/01/2026-06/30/2026"). A date after
+// a birth label is always accepted, and so is the far end of a range whose
+// near end has one ("DOBs: 03/14/1985 and 04/02/1990").
+func dobNotEvent(text string, start, end int) bool {
+	if dobCue(text, start, end) {
+		return true
+	}
+	if clockAfter.MatchString(text[end:]) || rangeAfter.MatchString(text[end:]) {
+		return false
+	}
+	lo := max(start-40, 0)
+	if loc := rangeBefore.FindStringIndex(text[lo:start]); loc != nil {
+		return dobCue(text, lo+loc[0], start)
+	}
+	return true
+}
 
 // hSpace is horizontal whitespace: tab and the Unicode space separators
 // (Zs) people paste in, such as U+00A0, U+2007, U+2009, U+202F and U+3000.
@@ -599,8 +670,30 @@ func validIP(text string, start, end int) bool {
 		if end+1 < len(text) && text[end] == '.' && isDigit(text[end+1]) {
 			return false
 		}
+		if productVersion(text, start) {
+			return false
+		}
 	}
 	return true
+}
+
+// productVersion reports whether the value at start is the version of a
+// User-Agent product token: "Name/" directly before it, the name starting
+// with a letter at a space, "(" or the start of the text. Chrome's
+// "Chrome/120.0.0.0" has the shape of an IPv4 address; a URL path segment
+// ("/api/clients/10.1.2.3") starts after a "/" and is still an address.
+func productVersion(text string, start int) bool {
+	if start < 2 || text[start-1] != '/' {
+		return false
+	}
+	i := start - 1
+	for i > 0 && start-1-i < 40 && (isAlnum(text[i-1]) || text[i-1] == '_' || text[i-1] == '-') {
+		i--
+	}
+	if i == start-1 || !isAlpha(text[i]) {
+		return false
+	}
+	return i == 0 || text[i-1] == ' ' || text[i-1] == '('
 }
 
 // ibanValid checks the ISO 13616 mod-97 check digits on the electronic form or

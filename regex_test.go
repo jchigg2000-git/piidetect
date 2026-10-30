@@ -103,3 +103,22 @@ func TestRedactExactExtent(t *testing.T) {
 		}
 	}
 }
+
+// A +1 number is NANP: ten digits after the +1. Signed counters and offsets
+// in logs used to be claimed as E.164 phones; real +1 numbers, encoded or not,
+// and other country codes still count.
+func TestSignedCountersAreNotPhones(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"delta=+1500000000 bytes", "delta=+1500000000 bytes"},
+		{"offset +1048576000 reached", "offset +1048576000 reached"},
+		{"ts +1727049600007", "ts +1727049600007"},
+		{"area code +11234567890", "area code +11234567890"},
+		{"SMS +14155550173 nightly", "SMS [PHONE] nightly"},
+		{"tel=%2B14155550173", "tel=[PHONE]"},
+		{"UK +442079460958", "UK [PHONE]"},
+	} {
+		if got, _ := New().Redact(context.Background(), c.in); got != c.want {
+			t.Errorf("Redact(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
