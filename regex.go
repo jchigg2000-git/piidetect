@@ -244,6 +244,24 @@ func NewRegex() *Regex {
 
 func (r *Regex) Name() string { return "regex" }
 
+// without returns a Regex reading with r's current recognizers minus those of
+// the off types, so a type a Chain drops is never scanned for at all.
+func (r *Regex) without(off map[string]bool) *Regex {
+	recs := builtins
+	if p := r.compiled.Load(); p != nil {
+		recs = *p
+	}
+	kept := make([]recognizer, 0, len(recs))
+	for _, rec := range recs {
+		if !off[rec.typ] {
+			kept = append(kept, rec)
+		}
+	}
+	v := &Regex{}
+	v.compiled.Store(&kept)
+	return v
+}
+
 // SetPatternPack recompiles builtin + pack rules and atomically swaps the
 // recognizer set — the flywheel hot-reload path, no restart. Non-regex kinds
 // (deny lists, thresholds) are Presidio configuration and are skipped here.

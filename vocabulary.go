@@ -1,5 +1,23 @@
 package piidetect
 
+// The built-in type names: the Span.Type the regex floor and the mapped
+// Presidio entities claim, and so the placeholder Mask writes ("[SSN]"). Use
+// them for Chain.Disable, pattern rules and switches on Span.Type; a pattern
+// pack may add types of its own beside them.
+const (
+	TypeSSN        = "SSN"
+	TypeCreditCard = "CREDIT_CARD"
+	TypeIBAN       = "IBAN"
+	TypeIP         = "IP"
+	TypeEmail      = "EMAIL"
+	TypePhone      = "PHONE"
+	TypeMRN        = "MRN"
+	TypeDOB        = "DOB"
+	// The Presidio tier's alone: the regex floor claims neither.
+	TypePersonName = "PERSON_NAME"
+	TypeAddress    = "ADDRESS"
+)
+
 // Presidio vocabulary: the mapping between a presidio-analyzer sidecar's
 // entity types and this package's own, plus the score gate applied to its
 // results. Exported because extending the map is how you teach the Presidio
@@ -18,16 +36,16 @@ const PresidioDefaultScoreGate = 0.4
 // construction: a running Presidio never reads the global, and a later edit
 // reaches only the instances built after it.
 var PresidioEntityMap = map[string]string{
-	"PERSON":          "PERSON_NAME",
-	"LOCATION":        "ADDRESS",
-	"EMAIL_ADDRESS":   "EMAIL",
-	"PHONE_NUMBER":    "PHONE",
-	"US_SSN":          "SSN",
-	"US_ITIN":         "SSN", // SSN-shaped tax id; inherits the SSN hyphen guard
-	"CREDIT_CARD":     "CREDIT_CARD",
-	"IP_ADDRESS":      "IP",
-	"IBAN_CODE":       "IBAN",
-	"MEDICAL_LICENSE": "MRN",
+	"PERSON":          TypePersonName,
+	"LOCATION":        TypeAddress,
+	"EMAIL_ADDRESS":   TypeEmail,
+	"PHONE_NUMBER":    TypePhone,
+	"US_SSN":          TypeSSN,
+	"US_ITIN":         TypeSSN, // SSN-shaped tax id; inherits the SSN hyphen guard
+	"CREDIT_CARD":     TypeCreditCard,
+	"IP_ADDRESS":      TypeIP,
+	"IBAN_CODE":       TypeIBAN,
+	"MEDICAL_LICENSE": TypeMRN,
 	"DATE_TIME":       "",
 	"URL":             "",
 	"NRP":             "",

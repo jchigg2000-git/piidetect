@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -55,9 +56,17 @@ type Chain struct {
 	// floor, which runs to the end unless ctx itself is done; zero means
 	// DefaultTimeout.
 	Timeout time.Duration
+	// Disable lists types the chain never reports, from any detector: the
+	// regex floor skips their recognizers, and a span another detector or a
+	// pattern rule claims of one is dropped. Nil means every type, as before.
+	// Set it before the first Run; the Type… constants name the built-ins.
+	Disable []string
 	// allow holds map[type]set(lowercased term) from the pattern pack's
 	// allow_list rules. Swapped atomically so a hot-reload never tears.
 	allow atomic.Value
+	// packErrs holds the []error detectors returned for the last
+	// SetPatternPack; Run reports them until a pack they accept replaces it.
+	packErrs atomic.Value
 }
 
 // typeGuards are engine-independent validators applied to every span by
@@ -65,14 +74,14 @@ type Chain struct {
 // the same way whichever engine claimed it (Presidio's context boosting has
 // no hyphen-adjacency notion; ours does).
 var typeGuards = map[string]func(text string, start, end int) bool{
-	"EMAIL":       emailValid,
-	"SSN":         ssnValid,
-	"CREDIT_CARD": luhnValid,
-	"IP":          validIP,
-	"IBAN":        ibanValid,
+	TypeEmail:      emailValid,
+	TypeSSN:        ssnValid,
+	TypeCreditCard: luhnValid,
+	TypeIP:         validIP,
+	TypeIBAN:       ibanValid,
 	// spaCy reads "ORD-290" as the airport code → LOCATION → ADDRESS; a real
 	// address never sits glued to a hyphenated identifier.
-	"ADDRESS": notHyphenAdjacent,
+	TypeAddress: notHyphenAdjacent,
 }
 
 // rawDetector is implemented by engines whose Detect merges their own hits.
@@ -83,12 +92,26 @@ type rawDetector interface {
 	detectRaw(ctx context.Context, text string) ([]Span, error)
 }
 
-// SetPatternPack installs the chain-level half of a pattern pack: the
-// allow-list entries. It lives here rather than in one engine because
-// suppression must overrule whichever engine made the claim, exactly like
-// typeGuards — a term the owner has ruled a false positive must not come back
-// because a different detector found it.
+// SetPatternPack configures the whole chain from one pattern pack. It hands
+// the pack to each detector that takes one (Regex, Presidio, or any Detector
+// with either SetPatternPack method), replacing the pack that detector held,
+// and installs the chain-level half itself: the allow-list entries. A pack of
+// allow-list rules only is not forwarded, so a detector configured on its own
+// keeps its rules when the chain's allow list changes.
+//
+// A detector that rejects the pack (the Regex, on a rule RE2 cannot compile)
+// keeps its previous one, and Run reports the rejection as that detector's
+// error on every call until a pack it accepts is installed — so a bad rule
+// fails the caller closed rather than going quietly unapplied.
+//
+// The allow list lives here rather than in one engine because suppression
+// must overrule whichever engine made the claim, exactly like typeGuards — a
+// term the owner has ruled a false positive must not come back because a
+// different detector found it.
 func (c *Chain) SetPatternPack(rules []PatternRule) {
+	if slices.ContainsFunc(rules, func(r PatternRule) bool { return r.Kind != "allow_list" }) {
+		c.forwardPack(rules)
+	}
 	allow := map[string]map[string]struct{}{}
 	for _, r := range rules {
 		if r.Kind != "allow_list" || len(r.AllowList) == 0 {
@@ -104,6 +127,23 @@ func (c *Chain) SetPatternPack(rules []PatternRule) {
 		}
 	}
 	c.allow.Store(allow)
+}
+
+// forwardPack hands rules to each detector that takes a pack, recording the
+// rejections Run reports.
+func (c *Chain) forwardPack(rules []PatternRule) {
+	var errs []error
+	for _, d := range c.Detectors {
+		switch pd := d.(type) {
+		case interface{ SetPatternPack([]PatternRule) error }:
+			if err := pd.SetPatternPack(rules); err != nil {
+				errs = append(errs, fmt.Errorf("%s: pattern pack not applied: %w", d.Name(), err))
+			}
+		case interface{ SetPatternPack([]PatternRule) }:
+			pd.SetPatternPack(rules)
+		}
+	}
+	c.packErrs.Store(errs)
 }
 
 // allowed reports whether this exact span text has been ruled a false positive
@@ -152,15 +192,22 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 	}
 	var all, allowed []Span
 	var errs []error
+	if pe, _ := c.packErrs.Load().([]error); len(pe) > 0 {
+		errs = append(errs, pe...)
+	}
 	detectors := c.Detectors
 	if len(detectors) == 0 {
 		detectors = []Detector{NewRegex()}
 		errs = append(errs, ErrNoDetectors)
 	}
+	off := typeSet(c.Disable)
 	for _, d := range detectors {
 		var spans []Span
 		var err error
 		if rd, ok := d.(rawDetector); ok {
+			if rx, isRegex := d.(*Regex); isRegex && len(off) > 0 {
+				rd = rx.without(off) // never scan for a type that is dropped
+			}
 			// The in-process floor is linear time and is what must not come back
 			// partly read; only the caller's own context stops it.
 			spans, err = rd.detectRaw(ctx, text)
@@ -175,8 +222,8 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 		}
 		bad := 0
 		for _, sp := range spans {
-			if sp.Start == sp.End {
-				continue // claims nothing
+			if sp.Start == sp.End || off[sp.Type] {
+				continue // claims nothing, or nothing the caller wants
 			}
 			if !sp.within(text) {
 				bad++
@@ -205,6 +252,18 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 		all = kept
 	}
 	return Merge(all), errs
+}
+
+// typeSet returns types as a set, nil when there are none.
+func typeSet(types []string) map[string]bool {
+	if len(types) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(types))
+	for _, t := range types {
+		set[t] = true
+	}
+	return set
 }
 
 // insideAny reports whether sp lies within a span of its own type in spans.

@@ -17,6 +17,20 @@
   reversible; a caller who needs the value back keeps its own key or table.
 - **Merge:** equal-confidence claims no longer leave a merged span's type to input order. The claim
   that starts first wins, then the longer, then the lower `Type` in byte order.
+- **Types:** `TypeSSN`, `TypeCreditCard`, `TypeIBAN`, `TypeIP`, `TypeEmail`, `TypePhone`,
+  `TypeMRN`, `TypeDOB`, `TypePersonName` and `TypeAddress` name the built-in vocabulary.
+- **Chain:** a `Disable` field drops types entirely: `chain.Disable = []string{piidetect.TypeDOB}`
+  stops unlabelled `03/14/2026` being claimed without a fork. A disabled type never comes back from
+  `Run`, from any detector or pattern rule, and the regex floor does not scan for it. Nil, as
+  before, means every type.
+
+### Changed
+
+- **Chain:** `SetPatternPack` now also hands the pack to each detector that takes one (`Regex`,
+  `Presidio`), so one call configures the chain; before, it installed only the allow lists. A pack
+  with detector rules replaces the pack each detector held; a pack of allow-list rules only is not
+  forwarded, so a `Regex` configured on its own keeps its rules. A pack the `Regex` rejects leaves it on its previous one, and `Run`
+  reports the rejection on every call until a good pack replaces it.
 
 ### Fixed
 

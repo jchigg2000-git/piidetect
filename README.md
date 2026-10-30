@@ -134,22 +134,38 @@ results are gated at `PresidioDefaultScoreGate` (0.4) unless a threshold rule lo
 `NewPresidio` copies the map, so edit it before constructing: a later edit reaches only the
 instances built after it.
 
+## Choosing types
+
+Every type is on by default. To drop one entirely, list it in `Chain.Disable`; the `Type…`
+constants name the built-ins (`TypeSSN`, `TypeCreditCard`, `TypeIBAN`, `TypeIP`, `TypeEmail`,
+`TypePhone`, `TypeMRN`, `TypeDOB`, and the Presidio tier's `TypePersonName` and `TypeAddress`):
+
+```go
+chain := piidetect.New()
+chain.Disable = []string{piidetect.TypeDOB} // a report's own MM/DD/YYYY dates stay
+```
+
+A disabled type never comes back from `Run`, whichever detector or pattern rule claimed it, and the
+regex floor does not scan for it at all. Set it before the first `Run`.
+
 ## Extending it at runtime
 
 `SetPatternPack` swaps in additional recognizers atomically, with no restart — regex rules, deny
 lists, per-type score thresholds, and allow lists:
 
 ```go
-regex := piidetect.NewRegex()
-regex.SetPatternPack([]piidetect.PatternRule{
-	{ID: "emp-id", Type: "EMPLOYEE_ID", Regex: `\bEMP\d{6}\b`, Confidence: 0.9},
-})
-
-chain := &piidetect.Chain{Detectors: []piidetect.Detector{regex}, Timeout: piidetect.DefaultTimeout}
+chain := piidetect.WithPresidio("http://localhost:5002")
 chain.SetPatternPack([]piidetect.PatternRule{
-	{ID: "not-ours", Type: "EMAIL", Kind: "allow_list", AllowList: []string{"support@example.com"}},
+	{ID: "emp-id", Type: "EMPLOYEE_ID", Regex: `\bEMP\d{6}\b`, Confidence: 0.9},
+	{ID: "not-ours", Type: piidetect.TypeEmail, Kind: "allow_list", AllowList: []string{"support@example.com"}},
 })
 ```
+
+`Chain.SetPatternPack` hands the pack to each detector that takes one, replacing the pack it held,
+and keeps the allow lists for itself, so one call configures the chain. A detector that rejects the
+pack — the regex engine, on a rule RE2 cannot compile — keeps its previous one, and `Run` reports
+the rejection on every call until a good pack replaces it. `Regex.SetPatternPack` returns that error
+directly.
 
 Presidio compiles a pack's regex rules with its own default flags, case-insensitive among them,
 so the same rule can match more there than in the regex engine (`\bEMP\d{6}\b` also matches
