@@ -1,0 +1,31 @@
+#!/bin/sh
+# Roadmap sync gate: fail when Go source changed and ROADMAP.md did not.
+# Enable: git config core.hooksPath githooks. Skip: PIIDETECT_SKIP_ROADMAP_SYNC=1.
+[ -n "$PIIDETECT_SKIP_ROADMAP_SYNC" ] && exit 0
+status=$(git status --porcelain 2>/dev/null) || exit 0
+roadmap=0
+touched=""
+n=0
+IFS='
+'
+for line in $status; do
+	path=${line#???}
+	case $path in *' -> '*) path=${path##* -> } ;; esac
+	path=${path#\"}
+	path=${path%\"}
+	case $path in
+	ROADMAP.md) roadmap=1 ;;
+	*.go)
+		n=$((n + 1))
+		[ $n -le 4 ] && touched="$touched${touched:+, }$path"
+		;;
+	esac
+done
+[ $roadmap -eq 1 ] && exit 0
+[ $n -eq 0 ] && exit 0
+[ $n -gt 4 ] && touched="$touched, … and $((n - 4)) more"
+echo "$n source file(s) changed and ROADMAP.md did not — $touched." >&2
+echo "  A finished unit of work updates §0's '▶ RESUME HERE' block and deletes what it" >&2
+echo "  closed; closure is deletion, not a ✅. If this is a mid-unit commit rather than a" >&2
+echo "  finished one, run it again with PIIDETECT_SKIP_ROADMAP_SYNC=1." >&2
+exit 1
