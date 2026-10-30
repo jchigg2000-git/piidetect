@@ -88,6 +88,11 @@ So these are left alone:
 Detection is RE2 — linear time, no catastrophic backtracking, safe to run on input you did not
 author.
 
+What it costs, on an Apple M5 (`go test -bench .`, `bench_test.go`): text with few values runs at
+about 8–9 MB/s (100 KB of JSON in 12 ms, 1 MB of prose in 120 ms), text dense with values at about
+3 MB/s, and a 1 KB log line takes 0.2–0.4 ms. An escape or look-alike costs a re-read of only the
+text around it. In a request path, budget up to a third of a millisecond per KB.
+
 ## Optional: the Presidio tier
 
 Regex cannot find names, street addresses, or PHI buried in narrative text. When you need those,
