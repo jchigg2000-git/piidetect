@@ -55,8 +55,11 @@ checks belong to the regex floor's own recognizers:
 | `MRN` | the `MRN`, `Medical Record` or `Med Rec` label then 6–10 digits: `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567`, `Medical Record Number: 1234567`, `"medicalRecordNumber": "1234567"` | the label must start a word or a camelCase hump; a line break is crossed only after a separator |
 | `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `date of birth`, `born`, `birthDate`, `<dob>`, `<birthDate value="…">`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, and month names (`14-Mar-1985`, `14th March 1985`) | month 01–12, day 01–31 (range only, not calendar-aware); the label for the other forms |
 
-Text that carries percent-encoding or look-alike punctuation is read twice, as given and normalized:
-`%XX` escapes are decoded, `+` between letters or digits is a space (query strings and form bodies:
+Text that carries JSON string escapes, percent-encoding or look-alike punctuation is read twice, as
+given and normalized: JSON escapes are decoded, so a value in a logged body is read as the string it
+encodes (`"Email:\njane.doe@example.org"`, `03\/14\/1985`, `m\u00fcller@example.de`,
+`{"body":"{\"ssn\":\"078051120\"}"}`; `\\n` stays a backslash and an `n`), `%XX` escapes are
+decoded, `+` between letters or digits is a space (query strings and form bodies:
 `mailto:jane.doe%40example.org`, `card=4111+1111+1111+1111`, `q=DOB%3A%203%2F14%2F1985`), and what a
 document pasted from a word processor or PDF carries is folded onto ASCII: the Unicode dashes that
 stand for a hyphen (`219–09–9999`, `415‑555‑0173`), non-breaking, thin and ideographic spaces
@@ -64,7 +67,9 @@ stand for a hyphen (`219–09–9999`, `415‑555‑0173`), non-breaking, thin a
 (`٢١٩-٠٩-٩٩٩٩`, `४१५-५५५-०१७३`). Zero-width characters and soft hyphens are dropped, so a value they
 split (`jane.<U+200B>doe@example.org`) is read whole. Spans are mapped back onto the text as given,
 so `Mask` replaces the whole value. The price is that a `+` is a space there: `123+45+6789` reads
-as an SSN. Text with none of these is read once.
+as an SSN, and a backslash before a letter is an escape there: in a Windows path
+(`C:\temp\nancy@example.org`) the `n` stays and `ancy@example.org` is masked. Text with none of
+these is read once.
 
 So these are left alone:
 
@@ -138,9 +143,10 @@ Stated plainly, because the failure mode of a redaction library is silent under-
   punctuation, and `219—09—9999` stays.
 - **Base64, quoted-printable and line-wrapped values** (`amFuZS5kb2VAZXhhbXBsZS5vcmc=`,
   `jane.doe=40example.org`, a number split across a line break) are not decoded or joined.
-- **Doubly encoded values, HTML entities and JSON `\u` escapes** (`jane.doe%2540example.org`,
-  `jane&#64;example.org`, `jane\u0040example.org`) are not decoded. Single percent-encoding and
-  form-encoded spaces are; see above. The Presidio tier reads the text as given.
+- **Doubly encoded values and HTML entities** (`jane.doe%2540example.org`, `jane&#64;example.org`)
+  are not decoded. Single percent-encoding, form-encoded spaces and JSON string escapes are; see
+  above, JSON escapes one level deep: a body escaped twice (`{\\\"ssn\\\":…}`) is not read. The
+  Presidio tier reads the text as given.
 - **Email addresses written in scripts without spaces** (Chinese, Japanese, Thai) are not matched
   in those scripts: the address would absorb the words around it. ASCII addresses inside such
   text are.

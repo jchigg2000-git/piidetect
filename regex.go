@@ -220,8 +220,8 @@ func (r *Regex) Detect(ctx context.Context, text string) ([]Span, error) {
 	return Merge(spans), err
 }
 
-// detectRaw reads the text as given and, when it carries percent-encoding or
-// look-alike punctuation, as normalized too. A span found only in the
+// detectRaw reads the text as given and, when it carries JSON escapes,
+// percent-encoding or look-alike punctuation, as normalized too. A span found only in the
 // normalized text is judged there — the
 // recognizer's own validator and the type guard, whose context checks need the
 // decoded characters — then mapped back to the offsets of the text as given
@@ -230,6 +230,16 @@ func (r *Regex) Detect(ctx context.Context, text string) ([]Span, error) {
 func (r *Regex) detectRaw(_ context.Context, text string) ([]Span, error) {
 	recs := *r.compiled.Load()
 	spans := scan(recs, text)
+	// Read as given, "Email:\njane.doe@example.org" holds the address
+	// njane.doe@example.org. The value starts after the escape, and a span
+	// that keeps its letter would mask it away: "Email:\[EMAIL]".
+	kept := spans[:0]
+	for _, sp := range spans {
+		if sp.Start = pastEscape(text, sp.Start); sp.Start < sp.End {
+			kept = append(kept, sp)
+		}
+	}
+	spans = kept
 	if dec, orig, ok := normalizedView(text); ok {
 		for _, sp := range scan(recs, dec) {
 			if guard, has := typeGuards[sp.Type]; has && !guard(dec, sp.Start, sp.End) {
@@ -240,6 +250,26 @@ func (r *Regex) detectRaw(_ context.Context, text string) ([]Span, error) {
 		}
 	}
 	return spans, nil
+}
+
+// pastEscape returns start, or the end of the JSON string escape whose
+// backslash sits right before it (the n of \n, the u of ü). A backslash
+// that is itself escaped (\\n) starts none.
+func pastEscape(text string, start int) int {
+	if start == 0 || text[start-1] != '\\' {
+		return start
+	}
+	run := 1
+	for run < start && text[start-1-run] == '\\' {
+		run++
+	}
+	if run%2 == 0 {
+		return start
+	}
+	if _, n := jsonEscape(text, start-1); n > 0 {
+		return start - 1 + n
+	}
+	return start
 }
 
 // scan returns every validated hit of recs in text, unmerged.

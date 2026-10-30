@@ -70,6 +70,15 @@
   `ー` and the hyphen bullet `⁃` read as a hyphen between digits only. The em dash and U+2015 are
   still not folded.
 
+- **All types:** values inside JSON string escapes were missed or cut. A value after a literal `\n`
+  had no word boundary (`{"note":"x\n219-09-9999"}` went out unchanged), an address after one lost
+  its first letter to the escape (`"Email:\njane.doe@example.org"` became `"Email:\[EMAIL]"`,
+  invalid JSON), `03\/14\/1985`, `m\u00fcller@example.de` and a body escaped into a string field
+  (`{"body":"{\"ssn\":\"078051120\"}"}`) were missed. The floor now also reads the text with
+  `\n \r \t \/ \" \\` and `\uXXXX` (surrogate pairs included) decoded, ahead of percent-decoding and
+  folding, and a span read as given never starts on an escape's letter, so `Mask` keeps the JSON
+  valid. `\\n` is a backslash and an `n`; text with no backslash escape is still read once.
+
 ### Fewer false positives
 
 - **CREDIT_CARD:** one in ten long numbers passes Luhn, and logs are full of them: epoch

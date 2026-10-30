@@ -87,5 +87,6 @@
   {"name": "unicode_space_separators", "engines": ["regex"], "marked": "Copied from a page: card «CREDIT_CARD|4111 1111 1111 1111», SSN «SSN|219 09 9999», phone «PHONE|415 555 0173», IBAN «IBAN|DE89 3704 0044 0532 0130 00»."},
   {"name": "fullwidth_forms", "engines": ["regex"], "marked": "Typed in a CJK editor: ＳＳＮ：«SSN|２１９－０９－９９９９», «MRN|ＭＲＮ：４４８１９２０», «EMAIL|jane.doe＠example.org»."},
   {"name": "trap_unicode_dash_lookalikes", "engines": ["regex"], "marked": "Order «TRAP|ORD–123–45–6789» and «TRAP|ORD‑123‑45‑6789» shipped; em dashes «TRAP|219—09—9999» and pages 3–5, 10–20 stay."},
-  {"name": "invisibles_and_script_digits", "engines": ["regex"], "marked": "Pasted: «EMAIL|jane.\u200bdoe@example.org», SSN «SSN|219\u200b-09-9999», card «CREDIT_CARD|4111\u00ad1111\u00ad1111\u00ad1111», SSN «SSN|٢١٩-٠٩-٩٩٩٩», Phone: «PHONE|४१५-५५५-०१७३», «EMAIL|jane.doe﹫example.org», SSN «SSN|219ー09ー9999»."}
+  {"name": "invisibles_and_script_digits", "engines": ["regex"], "marked": "Pasted: «EMAIL|jane.\u200bdoe@example.org», SSN «SSN|219\u200b-09-9999», card «CREDIT_CARD|4111\u00ad1111\u00ad1111\u00ad1111», SSN «SSN|٢١٩-٠٩-٩٩٩٩», Phone: «PHONE|४१५-५५५-०१७३», «EMAIL|jane.doe﹫example.org», SSN «SSN|219ー09ー9999»."},
+  {"name": "json_string_escapes", "engines": ["regex"], "marked": "Request log: {\"note\":\"Email:\\n«EMAIL|jane.doe@example.org»\",\"dob\":\"«DOB|03\\/14\\/1985»\",\"body\":\"{\\\"ssn\\\":\\\"«SSN|078051120»\\\"}\",\"to\":\"«EMAIL|m\\u00fcller@example.de»\"}"}
 ]

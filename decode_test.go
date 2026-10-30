@@ -2,6 +2,7 @@ package piidetect
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 )
 
@@ -160,5 +161,45 @@ func TestRedactInvisiblesAndScriptDigits(t *testing.T) {
 	// hyphen only between digits.
 	if view, orig, ok := normalizedView("a\u00adb ー ٣ー٤"); !ok || view != "ab ー 3-4" || orig[1] != 3 {
 		t.Errorf("normalizedView = %q %v %v", view, orig, ok)
+	}
+}
+
+// A logged JSON body hides its values behind string escapes: a value after \n
+// has no word boundary, and one escaped into a string field sits behind \".
+// Each must be masked whole, with the escape before it kept, so the JSON
+// stays valid; a backslash that is itself escaped is not one.
+func TestRedactJSONEscapedValues(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{`{"note":"x\n219-09-9999"}`, `{"note":"x\n[SSN]"}`},
+		{`"Email:\njane.doe@example.org"`, `"Email:\n[EMAIL]"`},
+		{`"Tel:\t415-555-0173\r\n"`, `"Tel:\t[PHONE]\r\n"`},
+		{`{"ssn":"219–09–9999"}`, `{"ssn":"[SSN]"}`},
+		{`{"ssn":"219\u201309\u20139999"}`, `{"ssn":"[SSN]"}`},
+		{`{"dob":"03\/14\/1985"}`, `{"dob":"[DOB]"}`},
+		{`{"body":"{\"ssn\":\"078051120\",\"dob\":\"1985-03-14\",\"phone\":\"4155550173\",\"mrn\":\"4481920\"}"}`,
+			`{"body":"{\"ssn\":\"[SSN]\",\"dob\":\"[DOB]\",\"phone\":\"[PHONE]\",\"[MRN]\"}"}`},
+		{`{"email":"m\u00fcller@example.de"}`, `{"email":"[EMAIL]"}`},
+		{`{"email":"jane\u0040example.org"}`, `{"email":"[EMAIL]"}`},
+		{`"a\u0020jane@example.org \ud83d\ude00"`, `"a\u0020[EMAIL] \ud83d\ude00"`},
+		// \\n is a backslash and an n: the n is glued to the number.
+		{`"x\\n219-09-9999"`, `"x\\n219-09-9999"`},
+	} {
+		got, _ := New().Redact(context.Background(), c.in)
+		if got != c.want {
+			t.Errorf("Redact(%s) = %s, want %s", c.in, got, c.want)
+		}
+		if !json.Valid([]byte(got)) {
+			t.Errorf("Redact(%s) = %s, not valid JSON", c.in, got)
+		}
+	}
+	// A surrogate pair is one character, mapped back onto its whole escape.
+	view, orig, ok := normalizedView(`a\ud83d\ude00b`)
+	if !ok || view != "a\U0001F600b" || orig[1] != 1 || orig[4] != 1 || orig[5] != 13 || orig[6] != 14 {
+		t.Errorf("normalizedView of a surrogate pair = %q %v %v", view, orig, ok)
+	}
+	for _, plain := range []string{`C:\Windows`, `a\`, `\u00`, `\x41`, `\ud83d alone`} {
+		if _, _, ok := normalizedView(plain); ok {
+			t.Errorf("normalizedView(%q) = ok, want no view", plain)
+		}
 	}
 }
