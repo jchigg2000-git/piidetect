@@ -193,10 +193,14 @@ func (p *Presidio) Detect(ctx context.Context, text string) ([]Span, error) {
 	if resp.StatusCode != http.StatusOK {
 		// Quote the start of the sidecar's own message (a missing language
 		// model, spaCy's E088 for overlong text) and drain a bounded rest so
-		// the connection can be reused.
+		// the connection can be reused. The quote is masked by the regex floor
+		// first: errors get logged, and a sidecar that echoed the text would
+		// otherwise put its PII in the log.
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-		return nil, fmt.Errorf("presidio analyze returned %d: %q", resp.StatusCode, bytes.TrimSpace(msg))
+		quote := string(bytes.TrimSpace(msg))
+		spans, _ := NewRegex().Detect(ctx, quote)
+		return nil, fmt.Errorf("presidio analyze returned %d: %q", resp.StatusCode, Mask(quote, spans))
 	}
 	var results []presidioResult
 	// Bound the sidecar read (runs inline per proxied request); normal analyze responses are small.

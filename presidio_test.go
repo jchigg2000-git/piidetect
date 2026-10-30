@@ -160,3 +160,20 @@ func TestPresidioClientEdges(t *testing.T) {
 		t.Errorf("sidecar saw %d requests; want 1 (the overlong text is not sent)", got)
 	}
 }
+
+// A sidecar error that echoes the request must not carry its PII into the
+// error, which callers log.
+func TestPresidioErrorQuoteIsMasked(t *testing.T) {
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error": "cannot analyze 'ssn 219-09-9999, jane.doe@example.org'"}`)
+	}))
+	defer stub.Close()
+	p := NewPresidio(stub.URL)
+	p.HTTPClient = stub.Client()
+	_, err := p.Detect(context.Background(), "ssn 219-09-9999, jane.doe@example.org")
+	if err == nil || strings.Contains(err.Error(), "219-09-9999") || strings.Contains(err.Error(), "jane.doe") ||
+		!strings.Contains(err.Error(), "[SSN]") {
+		t.Errorf("error = %v; want the quote masked", err)
+	}
+}
