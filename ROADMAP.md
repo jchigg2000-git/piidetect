@@ -38,9 +38,11 @@ against a temp copy at `8b02d83`; the input quoted on an item is the reproductio
 > **State:** `main` clean, CI green at `918ae05`; tagged `v0.2.0` (`7c4dbca`) and `v0.3.0` 2026-10-31
 > (owner: *"sure"*, to tagging `v0.3.0` and to MBI). Go floor 1.26; actions SHA-pinned; govulncheck in CI.
 >
-> **▶ NEXT ACTION: REC-5 — Medicare MBI as a new type (approved 2026-10-31).**
+> **▶ NEXT ACTION: none queued — every survey item has shipped; parked: streaming `io.Reader`, JSON value walking (§4).**
 >
 > #### What shipped
+> REC-5: `MBI` type (`TypeMBI`) — dashed uppercase anywhere, undashed or lowercase only after an
+> MBI/Medicare label; per-position validator; corpus 176 values, 0 missed, 0 FP. Unreleased.
 > Round 4: FP-2/FP-4 spaced SSN and phone shapes need a label (`call`/`text` added as phone cues);
 > FP-6 card issuers 31–33, 7, 8 (not 81/82), 9 (not 9792) rejected; API-6 one `error` from
 > `Run`/`Redact`/`RedactWith` via `errors.Join` of `*DetectorError`, `ErrSpanOutOfRange`; API-7b
@@ -79,9 +81,7 @@ No open items.
 
 Label-cued only; none of these widens an unlabelled shape.
 
-- ⬜ **REC-5** Medicare MBI as a new type — `MBI: 1EG4-TE5-MK73` missed. Dashed form anywhere, undashed
-  only after `MBI`/`Medicare`, per-position validator; trap an uppercase 11-char request ID.
-  Approved 2026-10-31.
+No open items.
 
 ## §4 Robustness & API (API)
 
@@ -100,7 +100,7 @@ No open items.
 
 ## §6 Measurement (MEAS)
 
-Corpus now: 171 floor values, 0 missed, 0 FP, 0 traps fired; per-type and per-shape tables in
+Corpus now: 176 floor values, 0 missed, 0 FP, 0 traps fired; per-type and per-shape tables in
 `go test -v -run Corpus`; `PIIDETECT_CORPUS_RESULTS=path` writes per-entry JSON for the TypeScript
 port. CI: Go 1.26 + stable, actions pinned by SHA, pinned staticcheck and govulncheck (stable leg),
 coverage floor 90%.
