@@ -81,6 +81,7 @@ var typeGuards = map[string]func(text string, start, end int) bool{
 	TypeCreditCard: luhnValid,
 	TypeIP:         validIP,
 	TypeIBAN:       ibanValid,
+	TypeMBI:        mbiValid,
 	// spaCy reads "ORD-290" as the airport code → LOCATION → ADDRESS; a real
 	// address never sits glued to a hyphenated identifier.
 	TypeAddress: notHyphenAdjacent,

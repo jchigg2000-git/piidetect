@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **MBI:** the Medicare Beneficiary Identifier is a new built-in type, `TypeMBI` (`[MBI]`). The
+  dashed form printed on the card (`1EG4-TE5-MK73`) is claimed anywhere; the unformatted form
+  (`1EG4TE5MK73`) only right after an MBI or Medicare label (`MBI:`, `Medicare ID`,
+  `"medicareId":`, `mbi_number=`), so an uppercase request ID of the same shape stays. Each of the
+  11 positions is checked against the CMS format. CMS issues it uppercase; a lowercase or
+  mixed-case value needs the label too. The check also guards `MBI` spans from pattern rules.
+  Presidio has no MBI entity, so none is mapped.
+
 ## v0.3.0 — 2026-10-31
 
 ### Changed (breaking)

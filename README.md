@@ -40,8 +40,8 @@ ever stops producing that string, CI fails.
 ## What it detects, and what confirms it
 
 A regex that matches the *shape* of an SSN will happily claim an order number, so every built-in
-type whose validity is checkable gets a validator. The `SSN`, `CREDIT_CARD`, `IBAN` and `IP` checks
-are applied to every span regardless of which detector claimed it; the `PHONE`, `MRN` and `DOB`
+type whose validity is checkable gets a validator. The `SSN`, `CREDIT_CARD`, `IBAN`, `IP` and `MBI`
+checks are applied to every span regardless of which detector claimed it; the `PHONE`, `MRN` and `DOB`
 checks belong to the regex floor's own recognizers:
 
 | Type | Recognized | Confirmed by |
@@ -54,6 +54,7 @@ checks belong to the regex floor's own recognizers:
 | `PHONE` | NANP (with or without `+1` / `1-`), E.164, and international numbers as printed (`+44 20 7946 0958`, `+55 (11) 91234-5678`); NANP spaced only (`415 555 0173`) or unformatted (`4155550173`) only after a phone label (`Phone:`, `Ph:`, `"mobile":`, `homePhone=`, `cellphone`, `mobileNo`, `contactNumber`, `Fax`) or `call` / `text` (`call me at 415 555 0173`, `text 415 555 0173`), optionally followed by `is` or `was` | NANP: area code and exchange start 2–9, not part of a longer digit run, hyphen adjacency; a `+1` number has exactly ten digits after the `+1` |
 | `MRN` | the `MRN`, `Medical Record`, `Med Rec` or `MR#` label, optionally followed by `is` or `was`, then 6–10 digits, optionally after a one- or two-letter prefix or joined by single hyphens (`MRN: E1234567`, `MRN: 12-345-678`; no spaces inside the value): `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MR#: 1234567`, `MRN is 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567`, `Medical Record Number: 1234567`, `"medicalRecordNumber": "1234567"` | the label must start a word or a camelCase hump; `MR` needs its `#`, so the title `Mr` never counts; a line break is crossed only after a separator |
 | `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `patientDob`, `date of birth`, `born`, `birthDate`, `<dob>`, `<birthDate value="…">`, any of them optionally followed by `is` or `was`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, ISO with a time and zone (`1985-03-14T00:00:00Z`, `1985-03-14 00:00:00`, masked whole), compact `YYYYMMDD` (`19850314`), and month names (`14-Mar-1985`, `14th March 1985`) | month 01–12, day 01–31 (range only, not calendar-aware); unlabelled, not followed by a clock time or one end of a date range; the label for the other forms |
+| `MBI` | the Medicare Beneficiary Identifier: dashed as printed on the card (`1EG4-TE5-MK73`) anywhere; unformatted (`1EG4TE5MK73`) only after an MBI or Medicare label (`MBI:`, `MBI-`, `Medicare ID`, `Medicare Number`, `Medicare Beneficiary Identifier`, `"medicareId":`, `patientMbi=`, `mbi_number`), optionally followed by `is` or `was`. Uppercase as CMS issues it; a lowercase or mixed-case value is accepted only after such a label, since a lowercase hex key can share the shape | each of the 11 positions: 1 a digit 1–9; 2, 5, 8, 9 a letter; 3, 6 a letter or digit; 4, 7, 10, 11 a digit; letters exclude `S`, `L`, `O`, `I`, `B`, `Z`; dashes only after positions 4 and 7; not glued to a hyphenated identifier other than an `MBI-` label |
 
 Text that carries JSON string escapes, HTML character references, percent-encoding or look-alike
 punctuation is read twice, as given and normalized: JSON escapes are decoded, so a value in a logged
@@ -166,7 +167,8 @@ instances built after it.
 
 Every type is on by default. To drop one entirely, list it in `Chain.Disable`; the `Type…`
 constants name the built-ins (`TypeSSN`, `TypeCreditCard`, `TypeIBAN`, `TypeIP`, `TypeEmail`,
-`TypePhone`, `TypeMRN`, `TypeDOB`, and the Presidio tier's `TypePersonName` and `TypeAddress`):
+`TypePhone`, `TypeMRN`, `TypeDOB`, `TypeMBI`, and the Presidio tier's `TypePersonName` and
+`TypeAddress`):
 
 ```go
 chain := piidetect.New()
@@ -236,6 +238,9 @@ Stated plainly, because the failure mode of a redaction library is silent under-
 - **Bare MRNs** without an `MRN` prefix are not matched, for the same reason. Neither is an `MRN`
   label with its value on the next line and no separator between them: a table header ending in
   `MRN` would otherwise claim the first number of the next row.
+- **Unformatted MBIs** (`1EG4TE5MK73`) are not matched unless an MBI or Medicare label sits right
+  before them: unlabelled, an uppercase request or trace ID of 11 characters can fit the shape.
+  Presidio has no MBI entity, so only the regex floor claims the type.
 - **Dates other than `MM/DD/YYYY`** (`3/14/1985`, `1985-03-14`, `14.03.1985`, `19850314`,
   `1985-03-14T00:00:00Z`) are only claimed as `DOB` right after a birth label. Unlabeled, they are
   almost always appointment, invoice, or log dates.

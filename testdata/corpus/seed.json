@@ -106,5 +106,9 @@
   {"name": "trap_compact_date_and_timestamp_unlabeled", "engines": ["regex"], "shape": "prose", "targets": ["DOB"], "marked": "Build «TRAP|19850314» deployed at «TRAP|2026-10-22T14:30:00Z» without errors."},
   {"name": "trap_ssn_spaced_unlabeled", "engines": ["regex"], "shape": "log", "targets": ["SSN"], "marked": "access: \"GET /api HTTP/1.1\" «TRAP|200 12 4096» \"-\" curl/8.4; POST /calc body n=«TRAP|123+45+6789»"},
   {"name": "trap_phone_spaced_unlabeled", "engines": ["regex"], "shape": "log", "targets": ["PHONE"], "marked": "thumbnail sizes «TRAP|512 768 1024» and dims «TRAP|640 480 1920» rendered; on failure call me at «PHONE|415 555 0173» or text «PHONE|212 555 0188»."},
-  {"name": "trap_card_port_list", "engines": ["regex"], "shape": "log", "targets": ["CREDIT_CARD"], "marked": "listening on ports «TRAP|8080 8443 9090 3000» after restart."}
+  {"name": "trap_card_port_list", "engines": ["regex"], "shape": "log", "targets": ["CREDIT_CARD"], "marked": "listening on ports «TRAP|8080 8443 9090 3000» after restart."},
+  {"name": "mbi_dashed_prose", "engines": ["regex"], "shape": "prose", "marked": "Her red-white-and-blue card shows «MBI|1EG4-TE5-MK73» under the name line."},
+  {"name": "mbi_labelled_undashed", "engines": ["regex"], "shape": "clinical", "marked": "Eligibility check: Medicare ID: «MBI|2DF7JK3WX40», Part B active; prior MBI is «MBI|5TV2EA8RC19»."},
+  {"name": "mbi_json_keys", "engines": ["regex"], "shape": "json", "marked": "{\"patient\":{\"medicareId\":\"«MBI|7HN0QU4GY62»\",\"plan\":\"B\"},\"mbi_number\":\"«MBI|4cp6rd2tx85»\"}"},
+  {"name": "trap_mbi_shaped_ids", "engines": ["regex"], "shape": "log", "targets": ["MBI"], "marked": "req «TRAP|1EG4TE5MK73» done in 12ms; replaced part «TRAP|1SB4-TE5-MK73» and «TRAP|1EG4-TE5-M173»; cache key «TRAP|1ac4-de5-fa73» evicted."}
 ]

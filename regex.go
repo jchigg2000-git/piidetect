@@ -197,6 +197,20 @@ func builtinRecognizers() []recognizer {
 				`|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? (?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?,? (?:19|20)\d{2}` +
 				`)\b`),
 			cues: dobCues},
+		// Medicare Beneficiary Identifier as printed on the card,
+		// 1EG4-TE5-MK73, anywhere. CMS issues it uppercase; a lowercase or
+		// mixed-case one needs an MBI or Medicare label right before it
+		// (mbiDashedValid), as a lowercase hex key can share the shape.
+		{typ: "MBI", confidence: 0.85,
+			re:       regexp.MustCompile(`(?i)\b` + mbiHead + `-` + mbiMid + `-` + mbiTail + `\b`),
+			validate: mbiDashedValid},
+		// Unformatted, 1EG4TE5MK73, only right after an MBI or Medicare
+		// label ("MBI: …", {"medicareId":"…"}), in either case: unlabelled,
+		// eleven uppercase letters and digits are as often a request or
+		// trace ID that happens to fit.
+		{typ: "MBI", confidence: 0.85,
+			re:       regexp.MustCompile(`(?i)\b` + mbiHead + mbiMid + mbiTail + `\b`),
+			validate: mbiValid, cues: mbiCues},
 	}
 	for i := range recs {
 		recs[i] = recs[i].withNeeds()
@@ -482,7 +496,7 @@ func notHyphenAdjacent(text string, start, end int) bool {
 // ORD-123-45-6789 is an order number.
 var hyphenLabels = map[string]bool{
 	"ssn": true, "tel": true, "phone": true, "fax": true, "cell": true,
-	"mobile": true, "cc": true, "card": true,
+	"mobile": true, "cc": true, "card": true, "mbi": true,
 }
 
 // hyphenLabel reports whether the hyphen at text[i] closes a whole word that
@@ -689,6 +703,77 @@ var phoneCues = []cue{
 	{"contact number", cueWordOrHump}, {"contactnumber", cueWordOrHump},
 	{"call", cueWord}, {"call me", cueWord}, {"call me at", cueWord}, {"call me on", cueWord}, {"call us at", cueWord},
 	{"text", cueWord}, {"text me", cueWord}, {"text me at", cueWord}, {"text me on", cueWord},
+}
+
+// mbiCues are the labels that make eleven bare characters of the MBI's shape
+// an MBI, or let a dashed one be lowercase.
+var mbiCues = []cue{
+	{"mbi", cueWordOrHump}, {"mbis", cueWordOrHump}, {"mbi no", cueWordOrHump}, {"mbi number", cueWordOrHump},
+	{"mbinumber", cueWordOrHump}, {"mbi_number", cueWordOrHump},
+	{"medicare", cueWordOrHump}, {"medicare id", cueWordOrHump}, {"medicare no", cueWordOrHump},
+	{"medicare number", cueWordOrHump}, {"medicareid", cueWordOrHump}, {"medicare_id", cueWordOrHump},
+	{"medicarenumber", cueWordOrHump}, {"medicare_number", cueWordOrHump},
+	{"medicare beneficiary id", cueWordOrHump}, {"medicare beneficiary identifier", cueWordOrHump},
+}
+
+// The MBI's positions, as regex classes: 1 is a digit 1–9; 2, 5, 8 and 9 a
+// letter; 3 and 6 a letter or digit; 4, 7, 10 and 11 a digit. Its letters
+// are A–Z less S, L, O, I, B and Z. The recognizers read them under (?i),
+// which also folds K onto the Kelvin sign, so mbiValid re-checks each
+// position in ASCII.
+const (
+	mbiLetter = `[AC-HJKMNP-RT-Y]`
+	mbiEither = `[0-9AC-HJKMNP-RT-Y]`
+	mbiHead   = `[1-9]` + mbiLetter + mbiEither + `\d` // positions 1–4
+	mbiMid    = mbiLetter + mbiEither + `\d`           // 5–7
+	mbiTail   = mbiLetter + mbiLetter + `\d\d`         // 8–11
+	mbiShape  = "1LA9LA9LL99"                          // per position: 1 = 1–9, 9 = 0–9, L = letter, A = either
+)
+
+// mbiValid checks a Medicare Beneficiary Identifier position by position, in
+// either case, unformatted or dashed after positions 4 and 7 (1EG4-TE5-MK73),
+// and rejects one glued to a hyphenated identifier (lot AB-1EG4-TE5-MK73).
+func mbiValid(text string, start, end int) bool {
+	s := text[start:end]
+	if len(s) == 13 && s[4] == '-' && s[8] == '-' {
+		s = s[:4] + s[5:8] + s[9:]
+	}
+	if len(s) != len(mbiShape) {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if isLower(c) {
+			c -= 'a' - 'A'
+		}
+		letter := isUpper(c) && !strings.ContainsRune("SLOIBZ", rune(c))
+		var ok bool
+		switch mbiShape[i] {
+		case '1':
+			ok = c >= '1' && c <= '9'
+		case '9':
+			ok = isDigit(c)
+		case 'L':
+			ok = letter
+		case 'A':
+			ok = letter || isDigit(c)
+		}
+		if !ok {
+			return false
+		}
+	}
+	return notHyphenAdjacent(text, start, end)
+}
+
+// mbiDashedValid is mbiValid for the dashed MBI rule, which also needs an MBI
+// label before a value that is not all uppercase. Only the regex floor's own
+// rule reads it: the type guard stays mbiValid.
+func mbiDashedValid(text string, start, end int) bool {
+	if !mbiValid(text, start, end) {
+		return false
+	}
+	v := text[start:end]
+	return v == strings.ToUpper(v) || labelledBy(text, start, mbiCues)
 }
 
 func dobCue(text string, start, _ int) bool { return labelledBy(text, start, dobCues) }

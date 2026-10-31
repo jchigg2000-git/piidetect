@@ -13,6 +13,7 @@ const (
 	TypePhone      = "PHONE"
 	TypeMRN        = "MRN"
 	TypeDOB        = "DOB"
+	TypeMBI        = "MBI" // Medicare Beneficiary Identifier
 	// The Presidio tier's alone: the regex floor claims neither.
 	TypePersonName = "PERSON_NAME"
 	TypeAddress    = "ADDRESS"

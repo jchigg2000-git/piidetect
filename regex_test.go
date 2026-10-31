@@ -146,6 +146,34 @@ func TestCardLayouts(t *testing.T) {
 	}
 }
 
+// A Medicare MBI is claimed dashed anywhere (uppercase, as CMS issues it) and
+// unformatted or lowercase only after an MBI or Medicare label; a value that
+// breaks a position rule, or is glued to a hyphenated identifier, is not one.
+func TestMBIForms(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"card 1EG4-TE5-MK73 ok", "card [MBI] ok"},
+		{"req 1EG4TE5MK73 done", "req 1EG4TE5MK73 done"},
+		{"MBI: 1EG4TE5MK73", "MBI: [MBI]"},
+		{"MBI-1EG4TE5MK73", "MBI-[MBI]"},
+		{"Medicare ID is 1EG4TE5MK73", "Medicare ID is [MBI]"},
+		{`{"medicareId":"1EG4TE5MK73"}`, `{"medicareId":"[MBI]"}`},
+		{"mbi_number=1eg4te5mk73", "mbi_number=[MBI]"},
+		{"Medicare: 1eg4-te5-mk73", "Medicare: [MBI]"},
+		{"Medicare: 1EG4–TE5–MK73", "Medicare: [MBI]"},
+		{"key 1eg4-te5-mk73", "key 1eg4-te5-mk73"},
+		{"SMBI 1EG4TE5MK73", "SMBI 1EG4TE5MK73"},
+		{"part 1SB4-TE5-MK73", "part 1SB4-TE5-MK73"},
+		{"part 0EG4-TE5-MK73", "part 0EG4-TE5-MK73"},
+		{"part 1EG4-TE5-M173", "part 1EG4-TE5-M173"},
+		{"lot AB-1EG4-TE5-MK73", "lot AB-1EG4-TE5-MK73"},
+		{"MBI 1EG4TE5MK73", "MBI 1EG4TE5MK73"},
+	} {
+		if got, _ := New().Redact(context.Background(), c.in); got != c.want {
+			t.Errorf("Redact(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // An SSN or NANP number spaced only, with no label, has the shape of log
 // counters and size lists, and a run of port numbers passes Luhn with an
 // issuer prefix no network uses. Labelled, cued ("call", "text"), dashed,
