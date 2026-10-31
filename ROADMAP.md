@@ -35,11 +35,10 @@ against a temp copy at `8b02d83`; the input quoted on an item is the reproductio
 
 > ### ▶ RESUME HERE — session handoff 2026-10-31
 >
-> **State:** `main` clean, `go test ./... -race` green (coverage 94.9%); tagged `v0.2.0` at
-> `7c4dbca` 2026-10-31 (owner: *"yes to all four, tag v0.2.0 now"*). Round 4 shipped untagged; the
-> breaking API change makes the next tag `v0.3.0`.
+> **State:** `main` clean, CI green at `918ae05`; tagged `v0.2.0` (`7c4dbca`) and `v0.3.0` 2026-10-31
+> (owner: *"sure"*, to tagging `v0.3.0` and to MBI). Go floor 1.26; actions SHA-pinned; govulncheck in CI.
 >
-> **▶ NEXT ACTION: owner — REC-5 (MBI) yes/no, and when to tag `v0.3.0`.**
+> **▶ NEXT ACTION: REC-5 — Medicare MBI as a new type (approved 2026-10-31).**
 >
 > #### What shipped
 > Round 4: FP-2/FP-4 spaced SSN and phone shapes need a label (`call`/`text` added as phone cues);
@@ -53,12 +52,10 @@ against a temp copy at `8b02d83`; the input quoted on an item is the reproductio
 > silently before; a chain forwarding such a pack fails every `Run` until it is fixed (fail closed).
 >
 > #### What I deliberately did NOT do, and why
-> REC-5 (MBI) not started: asked separately, not covered by the owner's yes. Tagged nothing after
-> `v0.2.0`: tags are public and need the owner's word.
+> Nothing held back.
 >
 > #### Questions — each one line from you
-> - REC-5: add Medicare MBI as a type?
-> - Tag `v0.3.0` now (breaking batch and the Go 1.26 floor are on main), or hold for more?
+> - None open.
 
 ---
 
@@ -84,6 +81,7 @@ Label-cued only; none of these widens an unlabelled shape.
 
 - ⬜ **REC-5** Medicare MBI as a new type — `MBI: 1EG4-TE5-MK73` missed. Dashed form anywhere, undashed
   only after `MBI`/`Medicare`, per-position validator; trap an uppercase 11-char request ID.
+  Approved 2026-10-31.
 
 ## §4 Robustness & API (API)
 
@@ -120,8 +118,8 @@ No open items.
 - ~~**FP-2 / FP-4** label required for space-only SSN and phone shapes?~~ **CLOSED 2026-10-31 (owner):** yes.
 - ~~**FP-6** tighter card issuer prefixes?~~ **CLOSED 2026-10-31 (owner):** yes.
 - ~~**API-6 / API-7b** open v0.2 for breaking changes?~~ **CLOSED 2026-10-31 (owner):** yes, after the `v0.2.0` tag.
-- **REC-5** add MBI as a type? → §3
-- **v0.3.0** tag now that the breaking batch is on main? → §7
+- ~~**REC-5** add MBI as a type?~~ **CLOSED 2026-10-31 (owner):** yes.
+- ~~**v0.3.0** tag now that the breaking batch is on main?~~ **CLOSED 2026-10-31 (owner):** yes, tagged.
 - ~~Bare line break between label and value, column-gap exception~~ **killed 2026-09-27:** unsafe; sends double-spaced and list wordings (folded TODO.md).
 - ~~Bare 9-digit SSN, 10-digit phone, bare MRN, uncued non-MM/DD dates~~ **killed 2026-10-30:** existing traps show the precision cost.
 - ~~Fold em dash / U+2015~~ **killed 2026-10-30:** sentence punctuation.
