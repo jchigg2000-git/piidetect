@@ -15,7 +15,7 @@ func TestChainDisable(t *testing.T) {
 	c.Detectors = append(c.Detectors, stubDetector{[]Span{{Start: 6, End: 16, Type: TypeDOB, Confidence: 0.9}}})
 	c.Disable = []string{TypeDOB}
 	clean, errs := c.Redact(ctx, text)
-	if len(errs) != 0 {
+	if errs != nil {
 		t.Fatalf("errors: %v", errs)
 	}
 	if want := "visit 03/14/2026, ssn [SSN]"; clean != want {
@@ -47,12 +47,12 @@ func TestChainSetPatternPackForwards(t *testing.T) {
 	c = &Chain{Detectors: []Detector{rx}}
 	c.SetPatternPack([]PatternRule{{ID: "bad", Type: "X", Regex: "("}})
 	for range 2 {
-		if _, errs := c.Run(ctx, "badge EMP123456"); len(errs) != 1 || !strings.Contains(errs[0].Error(), "pattern bad") {
+		if _, errs := c.Run(ctx, "badge EMP123456"); errs == nil || !strings.Contains(errs.Error(), "pattern bad") {
 			t.Errorf("a rejected rule must surface on Run, got %v", errs)
 		}
 	}
 	c.SetPatternPack(pack)
-	if _, errs := c.Run(ctx, "badge EMP123456"); len(errs) != 0 {
+	if _, errs := c.Run(ctx, "badge EMP123456"); errs != nil {
 		t.Errorf("a good pack must clear the error, got %v", errs)
 	}
 }
@@ -68,7 +68,7 @@ func TestChainAllowListPackKeepsDetectorRules(t *testing.T) {
 	c := &Chain{Detectors: []Detector{regex}}
 	c.SetPatternPack([]PatternRule{{ID: "ok", Type: TypeEmail, Kind: "allow_list", AllowList: []string{"support@example.com"}}})
 	got, errs := c.Redact(context.Background(), "EMP123456 wrote support@example.com")
-	if len(errs) != 0 || got != "[EMPLOYEE_ID] wrote support@example.com" {
+	if errs != nil || got != "[EMPLOYEE_ID] wrote support@example.com" {
 		t.Errorf("Redact = %q, %v", got, errs)
 	}
 }

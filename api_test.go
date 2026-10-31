@@ -13,7 +13,7 @@ import (
 func TestReadmeQuickstart(t *testing.T) {
 	clean, errs := New().Redact(context.Background(),
 		"Member 078-05-1120 paid with 4111 1111 1111 1111; reach her at jane.doe@example.org.")
-	if len(errs) != 0 {
+	if errs != nil {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 	want := "Member [SSN] paid with [CREDIT_CARD]; reach her at [EMAIL]."
@@ -47,10 +47,10 @@ func TestGuardsJudgeClaimsBeforeMerging(t *testing.T) {
 	}
 }
 
-func TestWithPresidioKeepsRegexFloorFirst(t *testing.T) {
-	c := WithPresidio("http://127.0.0.1:1") // deliberately dead
+func TestNewWithPresidioKeepsRegexFloorFirst(t *testing.T) {
+	c := NewWithPresidio("http://127.0.0.1:1") // deliberately dead
 	clean, errs := c.Redact(context.Background(), "SSN 078-05-1120 on file.")
-	if len(errs) == 0 {
+	if errs == nil {
 		t.Fatal("expected an error from the dead sidecar")
 	}
 	if !strings.Contains(clean, "[SSN]") {
@@ -70,7 +70,7 @@ func TestNewDoesNotRecompileBuiltins(t *testing.T) {
 // with no error. It now redacts with the floor and says why.
 func TestEmptyChainFailsClosed(t *testing.T) {
 	clean, errs := (&Chain{}).Redact(context.Background(), "ssn 078-05-1120")
-	if len(errs) != 1 || !errors.Is(errs[0], ErrNoDetectors) {
+	if !errors.Is(errs, ErrNoDetectors) {
 		t.Errorf("errs = %v, want [ErrNoDetectors]", errs)
 	}
 	if want := "ssn [SSN]"; clean != want {
@@ -102,7 +102,7 @@ func TestRegexFloorHonoursCancellation(t *testing.T) {
 	if d := time.Since(start); d > 200*time.Millisecond {
 		t.Errorf("cancelled run took %v, want it to stop early", d)
 	}
-	if len(errs) != 1 || !errors.Is(errs[0], context.Canceled) {
+	if !errors.Is(errs, context.Canceled) {
 		t.Errorf("errs = %v, want the cancellation reported", errs)
 	}
 }
@@ -113,7 +113,7 @@ func TestChainTimeoutDoesNotCutTheFloor(t *testing.T) {
 	text := strings.Repeat("nothing to see here. ", 2000) + "ssn 219-09-9999"
 	c := &Chain{Detectors: []Detector{NewRegex()}, Timeout: time.Nanosecond}
 	got, errs := c.Redact(context.Background(), text)
-	if len(errs) != 0 || !strings.HasSuffix(got, "ssn [SSN]") {
+	if errs != nil || !strings.HasSuffix(got, "ssn [SSN]") {
 		t.Fatalf("Redact with a 1ns Timeout: errs %v, tail %q", errs, got[len(got)-20:])
 	}
 }

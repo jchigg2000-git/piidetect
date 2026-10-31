@@ -90,7 +90,7 @@ func TestPresidioTrapShapesStaySilent(t *testing.T) {
 	p := NewPresidio(stub.URL)
 	chain := &Chain{Detectors: []Detector{p}, Timeout: time.Second}
 	spans, errs := chain.Run(context.Background(), "Where is order ORD-970-91-7304?")
-	if len(errs) > 0 {
+	if errs != nil {
 		t.Fatalf("chain errors: %v", errs)
 	}
 	if len(spans) != 0 {

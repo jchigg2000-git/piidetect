@@ -348,7 +348,7 @@ func TestCorpusRedactEndToEnd(t *testing.T) {
 			continue
 		}
 		out, errs := chain.Redact(context.Background(), e.Text)
-		if len(errs) > 0 {
+		if errs != nil {
 			t.Fatalf("%s: %v", e.Name, errs)
 		}
 		for _, truth := range e.Truths {

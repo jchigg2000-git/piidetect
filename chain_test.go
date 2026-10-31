@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,7 +28,7 @@ func TestChainMergesOverlapsHigherConfidenceWins(t *testing.T) {
 		fakeDetector{name: "b", spans: []Span{{Start: 8, End: 21, Type: "US_SSN_CTX", Confidence: 0.95, Detector: "b"}}},
 	}}
 	spans, errs := c.Run(context.Background(), "text long enough for both spans")
-	if len(errs) != 0 {
+	if errs != nil {
 		t.Fatalf("errs = %v", errs)
 	}
 	if len(spans) != 1 {
@@ -51,7 +52,7 @@ func TestChainCollectsErrorsAndKeepsGoodSpans(t *testing.T) {
 	if len(spans) != 1 {
 		t.Errorf("good detector's spans lost: %+v", spans)
 	}
-	if len(errs) != 1 {
+	if errs == nil {
 		t.Errorf("errs = %v, want the presidio failure surfaced", errs)
 	}
 }
@@ -124,7 +125,7 @@ func TestChainDropsOutOfRangeSpansAndReportsThem(t *testing.T) {
 	if want := "SSN [SSN] here"; clean != want {
 		t.Errorf("got %q, want %q", clean, want)
 	}
-	if len(errs) != 1 {
+	if !errors.Is(errs, ErrSpanOutOfRange) {
 		t.Errorf("errs = %v, want the buggy engine's bad spans reported", errs)
 	}
 }
@@ -137,7 +138,7 @@ func TestChainZeroTimeoutUsesDefault(t *testing.T) {
 	}))
 	defer stub.Close()
 	c := &Chain{Detectors: []Detector{NewPresidio(stub.URL)}}
-	if _, errs := c.Run(context.Background(), "hi"); len(errs) != 0 {
+	if _, errs := c.Run(context.Background(), "hi"); errs != nil {
 		t.Errorf("errs = %v", errs)
 	}
 }
@@ -173,5 +174,35 @@ func TestChainGuardsRejectNumbersNoNetworkIssues(t *testing.T) {
 		if spans, _ := ch.Run(context.Background(), text); (len(spans) == 1) != c.keep {
 			t.Errorf("%s %q: kept = %v, want %v", c.typ, c.value, len(spans) == 1, c.keep)
 		}
+	}
+}
+
+// Run returns one error: each failing detector's *DetectorError, found with
+// errors.As, while the floor still redacts. A pack Presidio cannot send is
+// rejected by its SetPatternPack and reported the same way on every Run.
+func TestChainJoinsDetectorErrorsAndFloorStillRedacts(t *testing.T) {
+	boom := errors.New("connection refused")
+	p := NewPresidio("http://127.0.0.1:0")
+	c := &Chain{Timeout: time.Second, Detectors: []Detector{
+		NewRegex(),
+		fakeDetector{name: "sidecar", err: boom},
+		fakeDetector{name: "buggy", spans: []Span{{Start: 0, End: 99, Type: "PERSON_NAME"}}},
+		p,
+	}}
+	bad := []PatternRule{{ID: "x", Type: "MRN", Kind: "regexp", Regex: `MRN\d+`}}
+	if err := p.SetPatternPack(bad); err == nil || !strings.Contains(err.Error(), `unknown kind "regexp"`) {
+		t.Errorf("Presidio.SetPatternPack = %v, want the unknown kind rejected", err)
+	}
+	c.SetPatternPack(bad)
+	clean, err := c.Redact(context.Background(), "ssn 078-05-1120")
+	if want := "ssn [SSN]"; clean != want {
+		t.Errorf("got %q, want %q: the floor must redact when a detector fails", clean, want)
+	}
+	var de *DetectorError
+	if !errors.As(err, &de) || de.Detector != "presidio" || !strings.Contains(de.Error(), "pattern pack not applied") {
+		t.Errorf("first DetectorError = %v, want presidio's pack rejection", de)
+	}
+	if !errors.Is(err, boom) || !errors.Is(err, ErrSpanOutOfRange) {
+		t.Errorf("err = %v, want the sidecar failure and the out-of-range spans", err)
 	}
 }

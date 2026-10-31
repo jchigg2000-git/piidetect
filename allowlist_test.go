@@ -38,7 +38,7 @@ func TestAllowListSuppressesTheNamedTermOnly(t *testing.T) {
 	rules := []PatternRule{{ID: "a1", Type: "PERSON_NAME", Kind: "allow_list", AllowList: []string{"Spider-Man"}}}
 
 	got, errs := chainWith(spans, rules).Run(context.Background(), text)
-	if len(errs) != 0 {
+	if errs != nil {
 		t.Fatalf("errors: %v", errs)
 	}
 	if len(got) != 1 {
@@ -128,7 +128,7 @@ func TestAllowListPlusAddress(t *testing.T) {
 	c := New()
 	c.SetPatternPack([]PatternRule{{ID: "a1", Type: "EMAIL", Kind: "allow_list", AllowList: []string{"support+billing@example.com"}}})
 	clean, errs := c.Redact(context.Background(), "support+billing@example.com cc jane.doe@example.org")
-	if len(errs) != 0 {
+	if errs != nil {
 		t.Fatalf("errors: %v", errs)
 	}
 	if want := "support+billing@example.com cc [EMAIL]"; clean != want {

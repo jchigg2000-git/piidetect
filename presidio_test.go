@@ -92,7 +92,7 @@ func TestPresidioLiveNamesAndAddresses(t *testing.T) {
 			continue
 		}
 		spans, errs := chain.Run(context.Background(), e.Text)
-		if len(errs) > 0 {
+		if errs != nil {
 			t.Fatalf("%s: chain errors: %v", e.Name, errs)
 		}
 		for _, truth := range e.Truths {

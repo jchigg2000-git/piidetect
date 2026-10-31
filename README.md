@@ -99,8 +99,8 @@ Regex cannot find names, street addresses, or PHI buried in narrative text. When
 point the chain at a self-hosted [presidio-analyzer](https://microsoft.github.io/presidio/):
 
 ```go
-c := piidetect.WithPresidio("http://localhost:5002")
-clean, errs := c.Redact(ctx, text)
+c := piidetect.NewWithPresidio("http://localhost:5002")
+clean, err := c.Redact(ctx, text)
 ```
 
 The regex floor still runs first and still runs if the sidecar is down — a dead sidecar degrades to
@@ -129,6 +129,25 @@ recognizers once it is done, so a cancelled request comes back partly read), or 
 misconfigured. Where a leak matters, treat any error as failure — drop the text or mask all of it —
 rather than send on the partial result. `Chain.Timeout` bounds the other detectors, not the regex
 floor: several megabytes are read to the end however long that takes.
+
+The error is one value, nil when nothing failed, joining every failure with `errors.Join`. Each
+detector's failure is a `*DetectorError` naming the detector; spans a detector returned outside the
+text are dropped and reported as its `DetectorError` wrapping `ErrSpanOutOfRange`:
+
+```go
+clean, err := chain.Redact(ctx, text)
+if err != nil {
+	var de *piidetect.DetectorError
+	if errors.As(err, &de) {
+		log.Printf("detector %s failed: %v", de.Detector, de.Err)
+	}
+	return errRedactionIncomplete // fail closed: clean may hold a missed value
+}
+```
+
+A cancelled or expired `ctx` comes back inside the floor's `DetectorError`, so
+`errors.Is(err, context.Canceled)` matches it, as `errors.Is(err, piidetect.ErrNoDetectors)` matches
+a chain with no detectors.
 
 Zero values are safe: a `Chain{}` with no detectors runs the built-in floor in their place and
 reports `ErrNoDetectors`, so `(&Chain{}).Redact(ctx, "ssn 078-05-1120")` gives `ssn [SSN]` and the
@@ -159,7 +178,7 @@ regex floor does not scan for it at all. Set it before the first `Run`.
 lists, per-type score thresholds, and allow lists:
 
 ```go
-chain := piidetect.WithPresidio("http://localhost:5002")
+chain := piidetect.NewWithPresidio("http://localhost:5002")
 chain.SetPatternPack([]piidetect.PatternRule{
 	{ID: "emp-id", Type: "EMPLOYEE_ID", Regex: `\bEMP\d{6}\b`, Confidence: 0.9},
 	{ID: "not-ours", Type: piidetect.TypeEmail, Kind: "allow_list", AllowList: []string{"support@example.com"}},
@@ -168,9 +187,10 @@ chain.SetPatternPack([]piidetect.PatternRule{
 
 `Chain.SetPatternPack` hands the pack to each detector that takes one, replacing the pack it held,
 and keeps the allow lists for itself, so one call configures the chain. A detector that rejects the
-pack — the regex engine, on a rule RE2 cannot compile — keeps its previous one, and `Run` reports
-the rejection on every call until a good pack replaces it. `Regex.SetPatternPack` returns that error
-directly.
+pack — the regex engine, on a rule RE2 cannot compile; Presidio, on a rule it cannot send, such as
+an unknown kind, an empty regex or deny list, or a threshold outside (0, 1] — keeps its previous one,
+and `Run` reports the rejection as that detector's `DetectorError` on every call until a good pack
+replaces it. `Regex.SetPatternPack` and `Presidio.SetPatternPack` return that error directly.
 
 Presidio compiles a pack's regex rules with its own default flags, case-insensitive among them,
 so the same rule can match more there than in the regex engine (`\bEMP\d{6}\b` also matches
@@ -194,7 +214,7 @@ pseudonym := func(sp piidetect.Span, value string) string {
 	mac.Write([]byte(sp.Type + "\x00" + strings.ToLower(value)))
 	return fmt.Sprintf("[%s:%x]", sp.Type, mac.Sum(nil)[:3])
 }
-clean, errs := piidetect.New().RedactWith(ctx, text, pseudonym)
+clean, err := piidetect.New().RedactWith(ctx, text, pseudonym)
 // jane.doe@example.org … Jane.Doe@example.org  →  [EMAIL:a9c778] … [EMAIL:a9c778]
 ```
 

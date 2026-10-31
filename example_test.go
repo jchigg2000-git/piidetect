@@ -12,9 +12,9 @@ import (
 
 // The README quickstart: the regex floor alone, no network, no configuration.
 func ExampleChain_Redact() {
-	clean, errs := piidetect.New().Redact(context.Background(),
+	clean, err := piidetect.New().Redact(context.Background(),
 		"Member 078-05-1120 paid with 4111 1111 1111 1111; reach her at jane.doe@example.org.")
-	if len(errs) > 0 {
+	if err != nil {
 		// Fail closed: a value may have been missed.
 		fmt.Println("dropped")
 		return
@@ -46,9 +46,9 @@ func ExampleChain_RedactWith() {
 		mac.Write([]byte(sp.Type + "\x00" + strings.ToLower(value)))
 		return fmt.Sprintf("[%s:%x]", sp.Type, mac.Sum(nil)[:3])
 	}
-	clean, errs := piidetect.New().RedactWith(context.Background(),
+	clean, err := piidetect.New().RedactWith(context.Background(),
 		"jane.doe@example.org wrote to bob@example.com; cc Jane.Doe@example.org", pseudonym)
-	if len(errs) > 0 {
+	if err != nil {
 		fmt.Println("dropped")
 		return
 	}

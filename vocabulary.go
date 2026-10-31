@@ -32,7 +32,7 @@ const PresidioDefaultScoreGate = 0.4
 // vocabulary. Types mapping to "" are dropped: DATE_TIME in particular is
 // false-positive noise against semver strings and order numbers.
 //
-// NewPresidio (and so WithPresidio) copies this map, so edits must come before
+// NewPresidio (and so NewWithPresidio) copies this map, so edits must come before
 // construction: a running Presidio never reads the global, and a later edit
 // reaches only the instances built after it.
 var PresidioEntityMap = map[string]string{
@@ -51,9 +51,9 @@ var PresidioEntityMap = map[string]string{
 	"NRP":             "",
 }
 
-// RuneToByteOffsets maps each rune index (plus one past the end) to its byte
+// runeToByteOffsets maps each rune index (plus one past the end) to its byte
 // offset. Presidio speaks unicode codepoints; Span offsets are bytes.
-func RuneToByteOffsets(s string) []int {
+func runeToByteOffsets(s string) []int {
 	offs := make([]int, 0, len(s)+1)
 	for i := range s {
 		offs = append(offs, i)

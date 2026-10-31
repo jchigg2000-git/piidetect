@@ -42,9 +42,10 @@ type Detector interface {
 }
 
 // Chain runs engines in order (fast deterministic floor first), each under
-// its own timeout, and merges overlapping spans. Engine errors are collected,
-// not fatal: the spans the other engines found, and those a failed engine
-// found before it stopped, are still returned. Any error means a value may
+// its own timeout, and merges overlapping spans. Engine errors are collected
+// into the one error Run returns, not fatal: the spans the other engines
+// found, and those a failed engine found before it stopped, are still
+// returned. A non-nil error means a value may
 // have been missed, so a caller handling regulated data should fail closed on
 // one — mask or drop the whole text — rather than send on the partial result.
 //
@@ -64,8 +65,9 @@ type Chain struct {
 	// allow holds map[type]set(lowercased term) from the pattern pack's
 	// allow_list rules. Swapped atomically so a hot-reload never tears.
 	allow atomic.Value
-	// packErrs holds the []error detectors returned for the last
-	// SetPatternPack; Run reports them until a pack they accept replaces it.
+	// packErrs holds the []error (each a *DetectorError) detectors returned
+	// for the last SetPatternPack; Run reports them until a pack they accept
+	// replaces it.
 	packErrs atomic.Value
 }
 
@@ -99,9 +101,9 @@ type rawDetector interface {
 // allow-list rules only is not forwarded, so a detector configured on its own
 // keeps its rules when the chain's allow list changes.
 //
-// A detector that rejects the pack (the Regex, on a rule RE2 cannot compile)
-// keeps its previous one, and Run reports the rejection as that detector's
-// error on every call until a pack it accepts is installed — so a bad rule
+// A detector that rejects the pack (the Regex, on a rule RE2 cannot compile;
+// the Presidio, on a rule it cannot send) keeps its previous one, and Run
+// reports the rejection as that detector's *DetectorError on every call until a pack it accepts is installed — so a bad rule
 // fails the caller closed rather than going quietly unapplied.
 //
 // The allow list lives here rather than in one engine because suppression
@@ -137,7 +139,7 @@ func (c *Chain) forwardPack(rules []PatternRule) {
 		switch pd := d.(type) {
 		case interface{ SetPatternPack([]PatternRule) error }:
 			if err := pd.SetPatternPack(rules); err != nil {
-				errs = append(errs, fmt.Errorf("%s: pattern pack not applied: %w", d.Name(), err))
+				errs = append(errs, &DetectorError{Detector: d.Name(), Err: fmt.Errorf("pattern pack not applied: %w", err)})
 			}
 		case interface{ SetPatternPack([]PatternRule) }:
 			pd.SetPatternPack(rules)
@@ -170,22 +172,22 @@ func (c *Chain) allowed(typ, span string) bool {
 	return false
 }
 
-// ErrNoDetectors is reported by a Chain with no Detectors. Such a Chain runs
-// the built-in regex floor in their place rather than return text unredacted.
-var ErrNoDetectors = errors.New("piidetect: chain has no detectors; ran the built-in regex floor")
-
-// Run returns merged, guard-validated spans plus one error per failed engine.
-// On any error the spans may be incomplete; see Chain.
+// Run returns merged, guard-validated spans and an error joining
+// (errors.Join) every failure, nil when there was none. On any error the
+// spans may be incomplete; see Chain. Each engine's failure is a
+// *DetectorError — find one with errors.As. A Chain with no Detectors adds
+// ErrNoDetectors, and a done ctx surfaces as ctx's error inside the floor's
+// DetectorError; both match with errors.Is.
 //
 // A span with offsets outside text is dropped and reported as its engine's
-// error. Kept, it would panic in a type guard, or merge with valid neighbours
+// DetectorError wrapping ErrSpanOutOfRange. Kept, it would panic in a type guard, or merge with valid neighbours
 // into a union Mask cannot apply — leaving all of them in the clear.
 //
 // A span the allow list suppresses also takes with it every span of the same
 // type inside it: a decoded reading of the allowed term (support+billing@…
 // read with '+' as a space) is the same characters, not another value. A span
 // that reaches outside it, or is of another type, stands.
-func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
+func (c *Chain) Run(ctx context.Context, text string) ([]Span, error) {
 	timeout := c.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
@@ -218,7 +220,7 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 		}
 		if err != nil {
 			// Keep what it found before failing: masking more is the safe side.
-			errs = append(errs, fmt.Errorf("%s: %w", d.Name(), err))
+			errs = append(errs, &DetectorError{Detector: d.Name(), Err: err})
 		}
 		bad := 0
 		for _, sp := range spans {
@@ -239,7 +241,7 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 			all = append(all, sp)
 		}
 		if bad > 0 {
-			errs = append(errs, fmt.Errorf("%s: dropped %d span(s) with offsets outside the text", d.Name(), bad))
+			errs = append(errs, &DetectorError{Detector: d.Name(), Err: fmt.Errorf("dropped %d span(s): %w", bad, ErrSpanOutOfRange)})
 		}
 	}
 	if len(allowed) > 0 {
@@ -251,7 +253,7 @@ func (c *Chain) Run(ctx context.Context, text string) ([]Span, []error) {
 		}
 		all = kept
 	}
-	return Merge(all), errs
+	return Merge(all), errors.Join(errs...)
 }
 
 // typeSet returns types as a set, nil when there are none.

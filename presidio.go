@@ -78,8 +78,53 @@ func (p *Presidio) language() string {
 	return p.Language
 }
 
-func (p *Presidio) SetPatternPack(rules []PatternRule) {
+// SetPatternPack atomically swaps in the pack sent with each request: regex
+// and deny-list rules as ad-hoc recognizers, threshold rules as per-type score
+// gates; allow-list rules are the Chain's and are skipped here. A rule it
+// cannot send — an unknown kind, a regex, deny-list or threshold rule with no
+// type, an empty regex or deny list, a confidence outside [0, 1] or a
+// threshold outside (0, 1] — rejects the whole pack, and the previous one
+// stays in force.
+//
+// Regex rules are not compiled here: the sidecar reads them as Python
+// regular expressions, which accept constructs RE2 does not.
+func (p *Presidio) SetPatternPack(rules []PatternRule) error {
+	for _, r := range rules {
+		if err := r.presidioInvalid(); err != "" {
+			return fmt.Errorf("pattern %s (%s): %s", r.ID, r.Type, err)
+		}
+	}
 	p.pack.Store(compilePack(rules, p.language()))
+	return nil
+}
+
+// presidioInvalid says why Presidio cannot send r, or "" when it can.
+func (r PatternRule) presidioInvalid() string {
+	switch {
+	case r.isRegex():
+		if r.Regex == "" {
+			return "empty regex"
+		}
+		if r.Confidence < 0 || r.Confidence > 1 {
+			return fmt.Sprintf("confidence %v outside [0, 1]", r.Confidence)
+		}
+	case r.Kind == "deny_list":
+		if len(r.DenyList) == 0 {
+			return "empty deny list"
+		}
+	case r.Kind == "threshold":
+		if r.Threshold <= 0 || r.Threshold > 1 {
+			return fmt.Sprintf("threshold %v outside (0, 1]", r.Threshold)
+		}
+	case r.Kind == "allow_list":
+		return ""
+	default:
+		return fmt.Sprintf("unknown kind %q", r.Kind)
+	}
+	if r.Type == "" {
+		return "no type"
+	}
+	return ""
 }
 
 func compilePack(rules []PatternRule, lang string) *compiledPack {
@@ -100,14 +145,14 @@ func compilePack(rules []PatternRule, lang string) *compiledPack {
 				rec["context"] = r.Context
 			}
 			c.adhoc = append(c.adhoc, rec)
-		case r.Kind == "deny_list" && len(r.DenyList) > 0:
+		case r.Kind == "deny_list":
 			c.adhoc = append(c.adhoc, map[string]any{
 				"name":               "pack-" + r.ID,
 				"supported_language": lang,
 				"supported_entity":   r.Type,
 				"deny_list":          r.DenyList,
 			})
-		case r.Kind == "threshold" && r.Threshold > 0:
+		case r.Kind == "threshold":
 			if g, ok := c.gates[r.Type]; !ok || r.Threshold < g {
 				c.gates[r.Type] = r.Threshold
 			}
@@ -209,7 +254,7 @@ func (p *Presidio) Detect(ctx context.Context, text string) ([]Span, error) {
 	}
 
 	// Presidio offsets are unicode codepoints; Go spans are byte offsets.
-	runeToByte := RuneToByteOffsets(text)
+	runeToByte := runeToByteOffsets(text)
 	var spans []Span
 	for _, r := range results {
 		typ, mapped := entities[r.EntityType]

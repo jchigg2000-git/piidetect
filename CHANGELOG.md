@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Changed (breaking)
+
+- **Errors:** `Chain.Run`, `Chain.Redact` and `Chain.RedactWith` return one `error` instead of
+  `[]error`: nil when nothing failed, otherwise every failure joined with `errors.Join`. Each
+  detector's failure (a failed `Detect`, a rejected pattern pack, spans outside the text) is a new
+  `*DetectorError` with the detector's name and the cause; find it with `errors.As`. Spans outside
+  the text wrap the new `ErrSpanOutOfRange`. `ErrNoDetectors` and a done `ctx` still match with
+  `errors.Is`, and the regex floor still redacts when another detector fails. Replace
+  `len(errs) > 0` with `err != nil`.
+- **Presidio:** `SetPatternPack` returns `error`. A rule it cannot send (an unknown kind, a regex,
+  deny-list or threshold rule with no type, an empty regex or deny list, a confidence outside
+  [0, 1], a threshold outside (0, 1]) rejects the pack and the previous one stays.
+  `Chain.SetPatternPack` reports that rejection on every `Run`, as it does the `Regex`'s.
+- **Renames:** `WithPresidio` is now `NewWithPresidio`, parallel to `New`. `RuneToByteOffsets` is
+  unexported. No aliases.
+
 ### Changed
 
 - **Regex:** an SSN or NANP number whose separators are all spaces now needs a label right before
