@@ -15,6 +15,9 @@
   deny-list or threshold rule with no type, an empty regex or deny list, a confidence outside
   [0, 1], a threshold outside (0, 1]) rejects the pack and the previous one stays.
   `Chain.SetPatternPack` reports that rejection on every `Run`, as it does the `Regex`'s.
+- **Go:** the minimum is now Go 1.26 (`go 1.26` in `go.mod`), the oldest release with upstream
+  security fixes; it was 1.22. With the default `GOTOOLCHAIN=auto`, an older Go downloads 1.26 to
+  build. CI tests 1.26 and the current stable release, and runs `govulncheck` on stable.
 - **Renames:** `WithPresidio` is now `NewWithPresidio`, parallel to `New`. `RuneToByteOffsets` is
   unexported. No aliases.
 

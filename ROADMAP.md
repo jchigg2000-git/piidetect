@@ -58,7 +58,7 @@ against a temp copy at `8b02d83`; the input quoted on an item is the reproductio
 >
 > #### Questions — each one line from you
 > - REC-5: add Medicare MBI as a type?
-> - Tag `v0.3.0` now (breaking batch is on main), or hold for more?
+> - Tag `v0.3.0` now (breaking batch and the Go 1.26 floor are on main), or hold for more?
 
 ---
 
@@ -104,7 +104,8 @@ No open items.
 
 Corpus now: 171 floor values, 0 missed, 0 FP, 0 traps fired; per-type and per-shape tables in
 `go test -v -run Corpus`; `PIIDETECT_CORPUS_RESULTS=path` writes per-entry JSON for the TypeScript
-port. CI: Go 1.22 + stable, pinned staticcheck, coverage floor 90%.
+port. CI: Go 1.26 + stable, actions pinned by SHA, pinned staticcheck and govulncheck (stable leg),
+coverage floor 90%.
 
 No open items. 🔬 OWED — the ask-meadowlark port's parity claim (55/55 at `d04df64`) is stale; that
 repo's session re-scores with the results file.

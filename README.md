@@ -107,6 +107,10 @@ The regex floor still runs first and still runs if the sidecar is down — a dea
 regex-only and reports the error alongside the spans it did find. It never fails open and silently
 returns your text unredacted.
 
+The sidecar client is the package's only network code, and it runs on your Go toolchain's
+`net/http` and `crypto/tls`. Build with a patched Go release: `govulncheck ./...` in your module
+flags the standard-library advisories it reaches.
+
 To configure the client, build the chain yourself. Each field's zero value is the default:
 
 ```go
