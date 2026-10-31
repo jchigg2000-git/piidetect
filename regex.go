@@ -87,9 +87,12 @@ func builtinRecognizers() []recognizer {
 		{typ: "EMAIL", confidence: 0.95,
 			re:       regexp.MustCompile(`[` + emailLetters + `0-9_][` + emailLetters + `\p{M}0-9._%+'-]*@[` + emailLetters + `\p{M}0-9.-]+\.[` + emailLetters + `\p{M}]{2,}`),
 			validate: emailValid},
+		// Spaced only ("123 45 6789") it needs an SSN label right before it:
+		// a status, size and byte count in an access log ("200 12 4096") or a
+		// form body's 123+45+6789 has the same shape.
 		{typ: "SSN", confidence: 0.9,
 			re:       regexp.MustCompile(`\b\d{3}[- ]\d{2}[- ]\d{4}\b`),
-			validate: ssnValid},
+			validate: ssnShapeValid},
 		// An unformatted SSN, but only right after an SSN label ("SSN:
 		// 078051120", {"ssn":"078051120"}): unlabeled, nine digits are far more
 		// often an order or account number.
@@ -97,16 +100,18 @@ func builtinRecognizers() []recognizer {
 			re:       regexp.MustCompile(`\b\d{9}\b`),
 			validate: ssnValid, cues: ssnCues},
 		// NANP. No \b on either side: nanpValid bounds the hit by non-digits
-		// instead, so "Tel415-555-0173" and "…0173x204" still count.
+		// instead, so "Tel415-555-0173" and "…0173x204" still count. Spaced
+		// only ("415 555 0173") it needs a phone label or "call"/"text" right
+		// before it, as a list of sizes ("512 768 1024") has the same shape.
 		{typ: "PHONE", confidence: 0.85,
 			re:       regexp.MustCompile(`(\+1[-. ]?)?(\(\d{3}\)[-. ]?|\d{3}[-. ])\d{3}[-. ]\d{4}`),
-			validate: nanpValid},
+			validate: phoneShapeValid},
 		// NANP with a bare trunk 1 ("1-800-555-0199"). Separate from the rule
 		// above so that a number merely ending in 1 ("Apt 21 415-555-0173")
 		// cannot pull the trunk into the phone and void it.
 		{typ: "PHONE", confidence: 0.85,
 			re:       regexp.MustCompile(`\b1(?:[-. ]?\(\d{3}\)[-. ]?|[-. ]\d{3}[-. ])\d{3}[-. ]\d{4}`),
-			validate: nanpValid},
+			validate: phoneShapeValid},
 		// An unformatted NANP number, but only right after a phone label
 		// ("Phone: 4155550173", {"mobile":"4155550173"}), for the same reason
 		// as the unformatted SSN above.
@@ -504,6 +509,42 @@ func ssnValid(text string, start, end int) bool {
 	return notHyphenAdjacent(text, start, end)
 }
 
+// ssnShapeValid is ssnValid for the formatted SSN rule, which also needs an
+// SSN label before a value whose separators are all spaces. Dashed and mixed
+// forms need none. Only the regex floor's own rule reads it: the type guard
+// stays ssnValid.
+func ssnShapeValid(text string, start, end int) bool {
+	if !ssnValid(text, start, end) {
+		return false
+	}
+	return !spaceSeparated(text[start:end]) || labelledBy(text, start, ssnCues)
+}
+
+// phoneShapeValid is nanpValid for the formatted NANP rules, which also need a
+// phone cue before a number whose separators are all spaces. A dash, dot,
+// bracket or "+1" in it is formatting enough.
+func phoneShapeValid(text string, start, end int) bool {
+	if !nanpValid(text, start, end) {
+		return false
+	}
+	return !spaceSeparated(text[start:end]) || labelledBy(text, start, phoneCues)
+}
+
+// spaceSeparated reports whether s holds a space and every byte of it that is
+// not a digit is one.
+func spaceSeparated(s string) bool {
+	spaced := false
+	for i := 0; i < len(s); i++ {
+		switch {
+		case s[i] == ' ':
+			spaced = true
+		case !isDigit(s[i]):
+			return false
+		}
+	}
+	return spaced
+}
+
 // digitsOf returns the ASCII digits of s, in order.
 func digitsOf(s string) string {
 	b := make([]byte, 0, len(s))
@@ -635,7 +676,9 @@ var ssnCues = []cue{
 	{"ssnnumber", cueWordOrHump}, {"ssn_number", cueWordOrHump}, {"ss", cueHash}, {"soc sec", cueWord},
 }
 
-// phoneCues are the labels that make ten bare digits a phone number.
+// phoneCues are the labels that make ten bare digits, or a number spaced
+// 3-3-4, a phone number. "call" and "text" are verbs, not labels, but they are
+// how a number is given in speech ("call me at 415 555 0173").
 var phoneCues = []cue{
 	{"phone", cueWordOrHump}, {"phones", cueWordOrHump}, {"tel", cueWordOrHump}, {"telephone", cueWordOrHump},
 	{"mobile", cueWordOrHump}, {"cell", cueWordOrHump}, {"fax", cueWordOrHump},
@@ -644,6 +687,8 @@ var phoneCues = []cue{
 	{"phonenumber", cueAnywhere}, {"phone_number", cueAnywhere},
 	{"ph", cueWord}, {"cellphone", cueWordOrHump}, {"mobile no", cueWordOrHump}, {"mobileno", cueWordOrHump},
 	{"contact number", cueWordOrHump}, {"contactnumber", cueWordOrHump},
+	{"call", cueWord}, {"call me", cueWord}, {"call me at", cueWord}, {"call me on", cueWord}, {"call us at", cueWord},
+	{"text", cueWord}, {"text me", cueWord}, {"text me at", cueWord}, {"text me on", cueWord},
 }
 
 func dobCue(text string, start, _ int) bool { return labelledBy(text, start, dobCues) }
@@ -808,17 +853,26 @@ func luhnValid(text string, start, end int) bool {
 // nanoseconds (19), snowflake IDs (18–19), compact timestamps
 // (20260922143015) and years in card layout (2023 2024 2025 2026) all start
 // 1 or 20. No network issues from a leading 0 (an all-zero placeholder passes
-// Luhn), from a leading 1 other than 15-digit UATP, or from 2 outside the
-// Mir (2200–2204) and Mastercard (2221–2720) ranges.
+// Luhn), from a leading 1 other than 15-digit UATP, from 2 outside the Mir
+// (2200–2204) and Mastercard (2221–2720) ranges, from 31–33, from 7, from 8
+// other than UnionPay's 81 and 82, or from 9 other than Troy's 9792: a run of
+// port numbers ("8080 8443 9090 3000") passes Luhn too. Fleet cards (7) and
+// the other 9xxx national schemes are given up for it.
 func issuable(d []int) bool {
 	switch d[0] {
-	case 0:
+	case 0, 7:
 		return false
 	case 1:
 		return len(d) == 15
 	case 2:
 		p := d[0]*1000 + d[1]*100 + d[2]*10 + d[3]
 		return len(d) >= 16 && (p <= 2204 && p >= 2200 || p >= 2221 && p <= 2720)
+	case 3:
+		return d[1] < 1 || d[1] > 3
+	case 8:
+		return d[1] == 1 || d[1] == 2
+	case 9:
+		return d[1] == 7 && d[2] == 9 && d[3] == 2
 	}
 	return true
 }

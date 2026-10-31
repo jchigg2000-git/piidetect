@@ -103,5 +103,8 @@
   {"name": "label_verb_and_aliases", "engines": ["regex"], "marked": "Caller said my SSN is «SSN|078051120» and «MRN|MRN is 4481920»; her date of birth is «DOB|1985-03-14». Form: SS#: «SSN|219099999», Ph: «PHONE|4155550173», {\"patientDob\":\"«DOB|3/14/85»\",\"mobileNo\":\"«PHONE|2125550188»\"}, «MRN|MR#: 5512093»."},
   {"name": "trap_mr_title_number", "engines": ["regex"], "shape": "prose", "targets": ["MRN"], "marked": "Room for Mr «TRAP|4481920», MR «TRAP|5512093» and Mr. «TRAP|8675309»; your confirmation number is «TRAP|483920571»."},
   {"name": "dob_timestamp_compact_mrn_prefixed", "engines": ["regex"], "marked": "Export {\"dob\":\"«DOB|1985-03-14T00:00:00Z»\"}, intake DOB: «DOB|1985-03-14 00:00:00», legacy {\"dob\":\"«DOB|19850314»\"}; charts «MRN|MRN: E1234567» and «MRN|MRN: 12-345-678» merged."},
-  {"name": "trap_compact_date_and_timestamp_unlabeled", "engines": ["regex"], "shape": "prose", "targets": ["DOB"], "marked": "Build «TRAP|19850314» deployed at «TRAP|2026-10-22T14:30:00Z» without errors."}
+  {"name": "trap_compact_date_and_timestamp_unlabeled", "engines": ["regex"], "shape": "prose", "targets": ["DOB"], "marked": "Build «TRAP|19850314» deployed at «TRAP|2026-10-22T14:30:00Z» without errors."},
+  {"name": "trap_ssn_spaced_unlabeled", "engines": ["regex"], "shape": "log", "targets": ["SSN"], "marked": "access: \"GET /api HTTP/1.1\" «TRAP|200 12 4096» \"-\" curl/8.4; POST /calc body n=«TRAP|123+45+6789»"},
+  {"name": "trap_phone_spaced_unlabeled", "engines": ["regex"], "shape": "log", "targets": ["PHONE"], "marked": "thumbnail sizes «TRAP|512 768 1024» and dims «TRAP|640 480 1920» rendered; on failure call me at «PHONE|415 555 0173» or text «PHONE|212 555 0188»."},
+  {"name": "trap_card_port_list", "engines": ["regex"], "shape": "log", "targets": ["CREDIT_CARD"], "marked": "listening on ports «TRAP|8080 8443 9090 3000» after restart."}
 ]

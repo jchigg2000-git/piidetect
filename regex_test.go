@@ -146,6 +146,40 @@ func TestCardLayouts(t *testing.T) {
 	}
 }
 
+// An SSN or NANP number spaced only, with no label, has the shape of log
+// counters and size lists, and a run of port numbers passes Luhn with an
+// issuer prefix no network uses. Labelled, cued ("call", "text"), dashed,
+// dotted and bracketed forms still count, as do 81/82 and 9792 cards.
+func TestSpacedShapesAndCardIssuers(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		// FP-2: spaced SSN needs an SSN label.
+		{`"GET /api HTTP/1.1" 200 12 4096`, `"GET /api HTTP/1.1" 200 12 4096`},
+		{"n=123+45+6789", "n=123+45+6789"},
+		{"SSN: 123 45 6789 ok", "SSN: [SSN] ok"},
+		{"ssn=123+45+6789", "ssn=[SSN]"},
+		{"ref 123-45-6789 ok", "ref [SSN] ok"},
+		// FP-4: spaced 3-3-4 needs a phone cue.
+		{"sizes 512 768 1024", "sizes 512 768 1024"},
+		{"dims 640 480 1920", "dims 640 480 1920"},
+		{"recall 415 555 0173", "recall 415 555 0173"},
+		{"call me at 415 555 0173", "call me at [PHONE]"},
+		{"text 415 555 0173", "text [PHONE]"},
+		{"Phone: 415 555 0173", "Phone: [PHONE]"},
+		{"ring 415-555-0173 or 415.555.0173", "ring [PHONE] or [PHONE]"},
+		{"ring (415) 555 0173 or +1 415 555 0173", "ring [PHONE] or [PHONE]"},
+		// FP-6: issuer prefixes.
+		{"ports 8080 8443 9090 3000", "ports 8080 8443 9090 3000"},
+		{"id 7000000000000005", "id 7000000000000005"},
+		{"id 3100000000000003", "id 3100000000000003"},
+		{"UnionPay 8100 0000 0000 0002", "UnionPay [CREDIT_CARD]"},
+		{"Troy 9792 0000 0000 0003", "Troy [CREDIT_CARD]"},
+	} {
+		if got, _ := New().Redact(context.Background(), c.in); got != c.want {
+			t.Errorf("Redact(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // A label may be joined to its value by "is" or "was", and the label lists
 // cover the camelCase, snake_case and abbreviated keys real records use. The
 // title "Mr" and a bare "number" are still not labels.

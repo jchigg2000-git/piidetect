@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Regex:** an SSN or NANP number whose separators are all spaces now needs a label right before
+  it. `"GET /api HTTP/1.1" 200 12 4096` and a form body's `123+45+6789` are no longer SSNs, and
+  `sizes 512 768 1024` is no longer a phone. `SSN: 123 45 6789` and `Phone: 415 555 0173` still
+  count, and `call` and `text` are new phone cues (`call me at 415 555 0173`, `text 415 555 0173`;
+  they also cue an unformatted `4155550173`). Dashed, dotted, bracketed and `+1` forms are
+  unchanged. A label further back (`SSN on file 123 45 6789`) no longer counts for the spaced form.
+- **Cards:** a leading `31`–`33`, `7`, `8` other than `81`/`82`, or `9` other than `9792` is no
+  longer a card, so `ports 8080 8443 9090 3000` is not masked. This applies to every engine's
+  `CREDIT_CARD` claim. Fleet cards (`7`) and other 9xxx national cards are no longer caught.
+
 ## v0.2.0 — 2026-10-31
 
 ### Added

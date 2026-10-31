@@ -46,12 +46,12 @@ checks belong to the regex floor's own recognizers:
 
 | Type | Recognized | Confirmed by |
 |---|---|---|
-| `SSN` | `123-45-6789`, `123 45 6789`, `SSN-123-45-6789`; unformatted (`078051120`) only after an SSN label (`SSN:`, `"ssn":`, `memberSsn=`, `ssn_number`, `Social Security Number`, `Soc Sec #`, `SS#`; never a bare `SS`), optionally followed by `is` or `was` (`My SSN is 078051120`) | never-issued numbers (area `000`/`666`, group `00`, serial `0000`) rejected; not glued to a hyphenated identifier other than a label (`SSN-`, `Tel-`, `CC-`) |
-| `CREDIT_CARD` | 13–19 digits unformatted, or printed 4-4-4-4, 4-4-4-4-3, 4-6-5 (Amex) or 4-6-4 (Diners) with spaces or hyphens; a following expiry or CVV does not hide it | Luhn checksum + hyphen adjacency + a network that could have issued it: a leading `0`, a leading `1` (other than 15-digit UATP) or a leading `2` outside the Mir and Mastercard ranges is not a card, which keeps epoch timestamps, snowflake IDs, compact timestamps (`20260922143015`) and `0000 0000 0000 0000` out |
+| `SSN` | `123-45-6789`, `SSN-123-45-6789`; spaced (`123 45 6789`) or unformatted (`078051120`) only after an SSN label (`SSN:`, `"ssn":`, `memberSsn=`, `ssn_number`, `Social Security Number`, `Soc Sec #`, `SS#`; never a bare `SS`), optionally followed by `is` or `was` (`My SSN is 078051120`) | never-issued numbers (area `000`/`666`, group `00`, serial `0000`) rejected; not glued to a hyphenated identifier other than a label (`SSN-`, `Tel-`, `CC-`) |
+| `CREDIT_CARD` | 13–19 digits unformatted, or printed 4-4-4-4, 4-4-4-4-3, 4-6-5 (Amex) or 4-6-4 (Diners) with spaces or hyphens; a following expiry or CVV does not hide it | Luhn checksum + hyphen adjacency + a network that could have issued it: a leading `0`, a leading `1` (other than 15-digit UATP), a leading `2` outside the Mir and Mastercard ranges, a leading `31`–`33`, a leading `7`, a leading `8` other than UnionPay's `81`/`82`, or a leading `9` other than Troy's `9792` is not a card, which keeps epoch timestamps, snowflake IDs, compact timestamps (`20260922143015`), port lists (`8080 8443 9090 3000`) and `0000 0000 0000 0000` out |
 | `IBAN` | electronic (`DE89370400440532013000`, any case) and printed (`DE89 3704 0044 0532 0130 00`); hyphen-grouped when the Presidio tier claims it | mod-97 check digits + the country's registered length |
 | `IP` | dotted quad; IPv6 of three or more groups, full or `::`-compressed (`2001:db8:85a3::8a2e:370:7334`, `[IPv6:2606:4700:4700::1111]`, `::ffff:192.0.2.1`), found by a linear scan; CIDR when the Presidio tier claims it | octet range, no leading zeros, not part of a longer dotted run such as an OID, not a User-Agent product version (`Chrome/120.0.0.0`); IPv6 must parse, and a MAC or WWN, a C++ scope (`std::string`), a clock time or `::1` is not one |
 | `EMAIL` | RFC-ish local@domain.tld, in Latin, Greek or Cyrillic letters (`müller@münchen.de`) | an image asset name (`logo@2x.png`), a method call (`A@np.linalg.inv(B)`) and an SSH remote followed by `:` and a path are not addresses |
-| `PHONE` | NANP (with or without `+1` / `1-`), E.164, and international numbers as printed (`+44 20 7946 0958`, `+55 (11) 91234-5678`); unformatted NANP (`4155550173`) only after a phone label (`Phone:`, `Ph:`, `"mobile":`, `homePhone=`, `cellphone`, `mobileNo`, `contactNumber`, `Fax`), optionally followed by `is` or `was` | NANP: area code and exchange start 2–9, not part of a longer digit run, hyphen adjacency; a `+1` number has exactly ten digits after the `+1` |
+| `PHONE` | NANP (with or without `+1` / `1-`), E.164, and international numbers as printed (`+44 20 7946 0958`, `+55 (11) 91234-5678`); NANP spaced only (`415 555 0173`) or unformatted (`4155550173`) only after a phone label (`Phone:`, `Ph:`, `"mobile":`, `homePhone=`, `cellphone`, `mobileNo`, `contactNumber`, `Fax`) or `call` / `text` (`call me at 415 555 0173`, `text 415 555 0173`), optionally followed by `is` or `was` | NANP: area code and exchange start 2–9, not part of a longer digit run, hyphen adjacency; a `+1` number has exactly ten digits after the `+1` |
 | `MRN` | the `MRN`, `Medical Record`, `Med Rec` or `MR#` label, optionally followed by `is` or `was`, then 6–10 digits, optionally after a one- or two-letter prefix or joined by single hyphens (`MRN: E1234567`, `MRN: 12-345-678`; no spaces inside the value): `MRN-1234567`, `MRN: 1234567`, `MRN# 1234567`, `MR#: 1234567`, `MRN is 1234567`, `MRN No. 1234567`, `"mrn": "1234567"`, `mrn=1234567`, `patientMrn: 1234567`, `Medical Record Number: 1234567`, `"medicalRecordNumber": "1234567"` | the label must start a word or a camelCase hump; `MR` needs its `#`, so the title `Mr` never counts; a line break is crossed only after a separator |
 | `DOB` | `MM/DD/YYYY` anywhere; after a birth label (`DOB:`, `patientDob`, `date of birth`, `born`, `birthDate`, `<dob>`, `<birthDate value="…">`, any of them optionally followed by `is` or `was`) also unpadded, `-` or `.` separated, day-first, two-digit years, ISO, ISO with a time and zone (`1985-03-14T00:00:00Z`, `1985-03-14 00:00:00`, masked whole), compact `YYYYMMDD` (`19850314`), and month names (`14-Mar-1985`, `14th March 1985`) | month 01–12, day 01–31 (range only, not calendar-aware); unlabelled, not followed by a clock time or one end of a date range; the label for the other forms |
 
@@ -71,8 +71,8 @@ stand for a hyphen (`219–09–9999`, `415‑555‑0173`), non-breaking, thin a
 (`4111 1111 1111 1111`), fullwidth forms (`ＳＳＮ：２１９－０９－９９９９`), and the digits of other scripts
 (`٢١٩-٠٩-٩٩٩٩`, `४१५-५५५-०१७३`). Zero-width characters and soft hyphens are dropped, so a value they
 split (`jane.<U+200B>doe@example.org`) is read whole. Spans are mapped back onto the text as given,
-so `Mask` replaces the whole value. The price is that a `+` is a space there: `123+45+6789` reads
-as an SSN; a literal `%` written `%25` before two hex digits is decoded again (`100%2540` reads
+so `Mask` replaces the whole value. The price is that a `+` is a space there: `ssn=123+45+6789`
+reads as an SSN (without the label, a spaced SSN is not claimed); a literal `%` written `%25` before two hex digits is decoded again (`100%2540` reads
 `100@`); and a backslash before a letter is an escape there: in a Windows path
 (`C:\temp\nancy@example.org`) the `n` stays and `ancy@example.org` is masked. Text with none of
 these is read once.
@@ -218,6 +218,13 @@ Stated plainly, because the failure mode of a redaction library is silent under-
 - **Bare 10-digit phone numbers** (`4155550173`) are not matched unless a phone label sits right
   before them, for the same reason as bare SSNs. As for MRN, a label's value on the next line is
   claimed only after a separator.
+- **SSNs and NANP numbers separated by spaces only** (`123 45 6789`, `415 555 0173`) are not
+  matched unless an SSN label, or a phone label or `call` / `text`, sits right before them: an
+  access log's `200 12 4096` and a size list's `512 768 1024` have the same shape. A label further
+  back (`SSN on file 123 45 6789`) does not count. Dashed, dotted, bracketed and `+1` forms need none.
+- **Cards from a few issuer ranges** are not matched: fleet cards (leading `7`), and leading `8`
+  or `9` cards other than UnionPay's `81`/`82` and Troy's `9792`. A run of port numbers passes Luhn
+  as often as they do.
 - **The em dash and the horizontal bar** (U+2014, U+2015) are not folded: they are a sentence's
   punctuation, and `219—09—9999` stays.
 - **Base64, quoted-printable and line-wrapped values** (`amFuZS5kb2VAZXhhbXBsZS5vcmc=`,
