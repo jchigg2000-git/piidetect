@@ -35,22 +35,30 @@ against a temp copy at `8b02d83`; the input quoted on an item is the reproductio
 
 > ### ▶ RESUME HERE — session handoff 2026-10-31
 >
-> **State:** `main` clean, CI green at `1b16ab4`; tagged `v0.2.0` 2026-10-31 (owner: *"yes to all
-> four, tag v0.2.0 now"*). Round 4 open: FP-2/FP-4/FP-6 and the breaking API-6/API-7b batch, for `v0.3.0`.
+> **State:** `main` clean, `go test ./... -race` green (coverage 94.9%); tagged `v0.2.0` at
+> `7c4dbca` 2026-10-31 (owner: *"yes to all four, tag v0.2.0 now"*). Round 4 shipped untagged; the
+> breaking API change makes the next tag `v0.3.0`.
 >
-> **▶ NEXT ACTION: round 4 — FP-2/FP-4/FP-6 (one builder, `regex.go`) ∥ API-6/API-7b (one builder).**
+> **▶ NEXT ACTION: owner — REC-5 (MBI) yes/no, and when to tag `v0.3.0`.**
 >
 > #### What shipped
-> Rounds 1–3, released as `v0.2.0` (see `CHANGELOG.md`).
+> Round 4: FP-2/FP-4 spaced SSN and phone shapes need a label (`call`/`text` added as phone cues);
+> FP-6 card issuers 31–33, 7, 8 (not 81/82), 9 (not 9792) rejected; API-6 one `error` from
+> `Run`/`Redact`/`RedactWith` via `errors.Join` of `*DetectorError`, `ErrSpanOutOfRange`; API-7b
+> `Presidio.SetPatternPack` returns `error`, `RuneToByteOffsets` unexported, `WithPresidio` →
+> `NewWithPresidio`. Corpus 171 values, 0 missed, 0 FP, 0 traps fired.
 >
 > #### What I found by reading that nobody reported
-> Nothing new since round 3.
+> `Presidio.SetPatternPack` now rejects empty deny lists and zero thresholds that were skipped
+> silently before; a chain forwarding such a pack fails every `Run` until it is fixed (fail closed).
 >
 > #### What I deliberately did NOT do, and why
-> REC-5 (MBI) not started: the owner's yes covered the four questions; MBI was asked separately.
+> REC-5 (MBI) not started: asked separately, not covered by the owner's yes. Tagged nothing after
+> `v0.2.0`: tags are public and need the owner's word.
 >
 > #### Questions — each one line from you
 > - REC-5: add Medicare MBI as a type?
+> - Tag `v0.3.0` now (breaking batch is on main), or hold for more?
 
 ---
 
@@ -66,18 +74,9 @@ No open items. Known edge kept on purpose: a Windows path `C:\temp\nancy@…` ma
 
 ## §2 Precision (FP)
 
-Each fix only removes claims; the precision reviewer sketched FP-2…FP-4 together with the shipped
-FP-1 and the corpus stayed green (every value caught, 0 traps). Each ships with its trap entry in `seed.json`.
+Each fix only removes claims and ships with its trap entry in `seed.json`.
 
-- ⬜ **FP-2** Space-separated SSN without a label — `"GET /api HTTP/1.1" 200 12 4096` → `[SSN]`; `123+45+6789`
-  after `+` folding (`regex.go:78`, `decode.go:100`). Fix: a spaced match needs an SSN label.
-  Cost: `SSN on file 123 45 6789` missed. Approved 2026-10-31.
-- ⬜ **FP-4** Space-only 3-3-4 phone shapes — `sizes 512 768 1024`, `dims 640 480 1920` → `[PHONE]`.
-  Fix: spaces-only separators need a phone label (add `call`/`text` cues). Cost: `call me at 415 555
-  0173` risky without them. Approved 2026-10-31.
-- ⬜ **FP-6** Issuer prefixes — `ports 8080 8443 9090 3000` → `[CREDIT_CARD]` (Luhn passes). Reject
-  leading 31–33, 7, 8 other than 81/82, 9 other than 9792 (`issuable`, `regex.go:538`). Cost: 7xxx
-  fleet and other 9xxx national cards missed. Approved 2026-10-31.
+No open items.
 
 ## §3 Recall (REC)
 
@@ -88,11 +87,7 @@ Label-cued only; none of these widens an unlabelled shape.
 
 ## §4 Robustness & API (API)
 
-- ⬜ **API-6** Error shape (breaking) — `Run`/`Redact` return `[]error` (`api.go:33`,
-  `piidetect.go:130`); move to one `error` via `errors.Join` of `*DetectorError` + `ErrSpanOutOfRange`.
-  Approved 2026-10-31; ships in `v0.3.0`.
-- ⬜ **API-7b** Breaking cleanups for v0.2 — `Presidio.SetPatternPack` returns `error`; unexport
-  `RuneToByteOffsets`; rename `WithPresidio`. Approved 2026-10-31; ships in `v0.3.0`.
+No open items.
 
 ### Parked ideas
 - 💭 Streaming `io.Reader` with overlapping windows; walking JSON document values. Large; after v0.2.
@@ -107,7 +102,7 @@ No open items.
 
 ## §6 Measurement (MEAS)
 
-Corpus now: 169 floor values, 0 missed, 0 FP, 0 traps fired; per-type and per-shape tables in
+Corpus now: 171 floor values, 0 missed, 0 FP, 0 traps fired; per-type and per-shape tables in
 `go test -v -run Corpus`; `PIIDETECT_CORPUS_RESULTS=path` writes per-entry JSON for the TypeScript
 port. CI: Go 1.22 + stable, pinned staticcheck, coverage floor 90%.
 
@@ -125,6 +120,7 @@ No open items.
 - ~~**FP-6** tighter card issuer prefixes?~~ **CLOSED 2026-10-31 (owner):** yes.
 - ~~**API-6 / API-7b** open v0.2 for breaking changes?~~ **CLOSED 2026-10-31 (owner):** yes, after the `v0.2.0` tag.
 - **REC-5** add MBI as a type? → §3
+- **v0.3.0** tag now that the breaking batch is on main? → §7
 - ~~Bare line break between label and value, column-gap exception~~ **killed 2026-09-27:** unsafe; sends double-spaced and list wordings (folded TODO.md).
 - ~~Bare 9-digit SSN, 10-digit phone, bare MRN, uncued non-MM/DD dates~~ **killed 2026-10-30:** existing traps show the precision cost.
 - ~~Fold em dash / U+2015~~ **killed 2026-10-30:** sentence punctuation.
